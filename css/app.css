@@ -34,6 +34,7 @@ h1{margin:0;font-size:24px;letter-spacing:-.02em;color:var(--pv-charcoal)}
 .sidebar-brand{padding:4px 10px 18px;margin:0 0 12px;border-bottom:1px solid rgba(235,231,237,.18)}
 .sidebar-brand__title{color:var(--pv-white);font-size:21px;font-weight:900;letter-spacing:-.02em;line-height:1.15}
 .sidebar-brand__subtitle{margin-top:6px;color:#b8aebd;font-size:13px;line-height:1.35}
+.preview-badge{display:inline-flex;align-items:center;width:max-content;margin:8px 0 6px;padding:4px 8px;border:1px solid rgba(255,255,255,.28);border-radius:999px;background:rgba(255,255,255,.10);color:#f4edf6;font-size:11px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
 .nav{appearance:none;border:0;background:transparent;color:var(--neutral-border);text-align:left;padding:11px 12px;border-radius:10px;font-weight:700;cursor:pointer;min-height:42px}
 .nav:hover,.nav.active{background:var(--pv-purple-dark);color:var(--pv-white)}
 .nav:focus-visible,.btn:focus-visible,.tile:focus-visible,.search:focus-visible,#exportPersona:focus-visible,.select-persona input:focus-visible{outline:none;box-shadow:var(--focus)}
