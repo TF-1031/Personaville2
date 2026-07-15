@@ -185,7 +185,32 @@
                 <button id="personaEditorSave" class="btn primary" type="button">Save Persona</button>
               </div>
             </section>
-            <section class="manage-section"><h3>Speed Options</h3><p class="muted">Editing controls will be added here.</p></section>
+            <section class="manage-section speed-option-editor" aria-labelledby="speedOptionEditorHeading">
+              <div class="section-head compact">
+                <div>
+                  <h3 id="speedOptionEditorHeading">Speed Options</h3>
+                  <p class="muted">Create, edit, duplicate, activate/deactivate, reorder, and remove speed options for the selected persona. Pricing rows are summarized but not directly editable yet.</p>
+                </div>
+                <span id="speedOptionEditorCount" class="pill gray">0 speed options</span>
+              </div>
+              <div class="persona-editor-toolbar">
+                <button id="speedOptionCreateNew" class="btn primary" type="button">New Speed Option</button>
+                <button id="speedOptionDuplicate" class="btn" type="button">Duplicate</button>
+                <button id="speedOptionActivate" class="btn" type="button">Activate</button>
+                <button id="speedOptionDeactivate" class="btn" type="button">Deactivate</button>
+                <button id="speedOptionMoveUp" class="btn" type="button">Move Up</button>
+                <button id="speedOptionMoveDown" class="btn" type="button">Move Down</button>
+                <button id="speedOptionRemove" class="btn danger" type="button">Remove</button>
+              </div>
+              <div class="persona-editor-layout">
+                <div id="speedOptionEditorList" class="persona-editor-list" aria-label="Selected persona speed options"></div>
+                <form id="speedOptionEditorForm" class="persona-editor-form" aria-label="Speed option fields"></form>
+              </div>
+              <div class="persona-editor-footer">
+                <p class="muted">ReferenceID and PersonaID + SpeedOption uniqueness are validated. ScheduleID resolution and pricing relationship warnings update with each save.</p>
+                <button id="speedOptionEditorSave" class="btn primary" type="button">Save Speed Option</button>
+              </div>
+            </section>
             <section class="manage-section"><h3>Pricing</h3><p class="muted">Editing controls will be added here.</p></section>
             <section class="manage-section"><h3>Modifiers</h3><p class="muted">Editing controls will be added here.</p></section>
             <section class="manage-section"><h3>Disclaimers</h3><p class="muted">Editing controls will be added here.</p></section>

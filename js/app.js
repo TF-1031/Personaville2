@@ -165,6 +165,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("personaDeactivate")?.addEventListener("click", () => statusSelectedPersonaEditor("Inactive"));
   document.getElementById("personaMarkDeleted")?.addEventListener("click", deleteSelectedPersonaEditor);
   document.getElementById("personaEditorSave")?.addEventListener("click", savePersonaEditor);
+  document.getElementById("speedOptionCreateNew")?.addEventListener("click", createSpeedOptionEditor);
+  document.getElementById("speedOptionDuplicate")?.addEventListener("click", duplicateSelectedSpeedOptionEditor);
+  document.getElementById("speedOptionActivate")?.addEventListener("click", () => activeSelectedSpeedOptionEditor(true));
+  document.getElementById("speedOptionDeactivate")?.addEventListener("click", () => activeSelectedSpeedOptionEditor(false));
+  document.getElementById("speedOptionMoveUp")?.addEventListener("click", () => moveSelectedSpeedOptionEditor(-1));
+  document.getElementById("speedOptionMoveDown")?.addEventListener("click", () => moveSelectedSpeedOptionEditor(1));
+  document.getElementById("speedOptionRemove")?.addEventListener("click", removeSelectedSpeedOptionEditor);
+  document.getElementById("speedOptionEditorSave")?.addEventListener("click", saveSpeedOptionEditor);
   window.addEventListener("beforeunload", event => {
     if(!editingHasUnsavedChanges()) return;
     event.preventDefault();
