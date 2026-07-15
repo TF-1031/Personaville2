@@ -144,17 +144,29 @@
       </section>
 
       <section id="manage" class="view">
-        <div class="manage-card" aria-labelledby="manageHeading">
-          <p class="eyebrow">Personaville Manager</p>
-          <h2 id="manageHeading">Coming Soon</h2>
-          <p class="muted">A polished workspace for managing the Personaville database is planned for a future release.</p>
-          <ul class="coming-soon-list">
-            <li>Edit personas</li>
-            <li>Edit speed options and pricing</li>
-            <li>Manage modifiers and disclaimers</li>
-            <li>Upload icons and images</li>
-            <li>Version history and publishing tools</li>
-          </ul>
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Personaville Manager</p>
+            <h2 id="manageHeading">Manage Workspace</h2>
+          </div>
+          <span id="editingStatus" class="pill ok" aria-live="polite">No unsaved changes</span>
+        </div>
+        <div class="manage-card manage-card-wide" aria-labelledby="manageHeading">
+          <p class="muted">Safe v2 editing uses an editable working copy. Published data remains unchanged until an exported database is explicitly downloaded and published.</p>
+          <div class="manage-actions">
+            <button id="startEditing" class="btn primary" type="button">Start Editing</button>
+            <button id="discardWorkingCopy" class="btn" type="button">Discard Working Changes</button>
+            <button id="resetWorkingCopy" class="btn" type="button">Reset from Published Database</button>
+          </div>
+          <div id="editingStateSummary" class="kpis dashboard-overview" aria-live="polite"></div>
+          <div class="manage-workspace-grid" aria-label="Manage workspace sections">
+            <section class="manage-section"><h3>Personas</h3><p class="muted">Editing controls will be added here.</p></section>
+            <section class="manage-section"><h3>Speed Options</h3><p class="muted">Editing controls will be added here.</p></section>
+            <section class="manage-section"><h3>Pricing</h3><p class="muted">Editing controls will be added here.</p></section>
+            <section class="manage-section"><h3>Modifiers</h3><p class="muted">Editing controls will be added here.</p></section>
+            <section class="manage-section"><h3>Disclaimers</h3><p class="muted">Editing controls will be added here.</p></section>
+            <section class="manage-section"><h3>Assets</h3><p class="muted">Editing controls will be added here.</p></section>
+          </div>
         </div>
       </section>
 

@@ -50,6 +50,7 @@ function renderAll(){
   renderBuildSummary();
   renderSourceBanner();
   renderPublishPanel();
+  renderEditingStatus();
   fillExportPicker();
   renderExportCartTray();
   document.getElementById("dbStatus").textContent = "Database loaded";
@@ -57,6 +58,24 @@ function renderAll(){
   const download = document.getElementById("downloadUpdatedJson");
   if(download) download.disabled = !DB.loadedFromWorkbook;
 }
+function renderEditingStatus(){
+  const status = document.getElementById("editingStatus");
+  if(status){
+    const dirty = editingHasUnsavedChanges();
+    status.textContent = editingStatusText();
+    status.className = `pill ${dirty ? "warn" : "ok"}`;
+  }
+  const state = document.getElementById("editingStateSummary");
+  if(state){
+    const changes = Object.values(editingSessionState().recordStates || {}).reduce((acc, value) => { acc[value] = (acc[value] || 0) + 1; return acc; }, {});
+    state.innerHTML = "";
+    state.appendChild(el("div",{class:"status-card kpi"},[el("div",{class:"num"},[editingSessionState().isEditing ? "Active" : "Not started"]), el("div",{class:"label"},["Editing Session"])]));
+    state.appendChild(el("div",{class:"status-card kpi"},[el("div",{class:"num"},[String(changes.created || 0)]), el("div",{class:"label"},["Created records"])]));
+    state.appendChild(el("div",{class:"status-card kpi"},[el("div",{class:"num"},[String(changes.modified || 0)]), el("div",{class:"label"},["Modified records"])]));
+    state.appendChild(el("div",{class:"status-card kpi"},[el("div",{class:"num"},[String(changes.deleted || 0)]), el("div",{class:"label"},["Deleted records"])]));
+  }
+}
+
 function appVersion(){
   return "Personaville v1.0";
 }
