@@ -211,7 +211,31 @@
                 <button id="speedOptionEditorSave" class="btn primary" type="button">Save Speed Option</button>
               </div>
             </section>
-            <section class="manage-section"><h3>Pricing</h3><p class="muted">Editing controls will be added here.</p></section>
+            <section class="manage-section pricing-schedule-editor" aria-labelledby="pricingScheduleEditorHeading">
+              <div class="section-head compact">
+                <div>
+                  <h3 id="pricingScheduleEditorHeading">Pricing Schedule Editor</h3>
+                  <p class="muted">Create and maintain structured pricing rows without directly editing Excel. Published data is protected until you download and publish the working copy.</p>
+                </div>
+              </div>
+              <div class="persona-editor-toolbar">
+                <label class="editor-field pricing-schedule-picker" for="pricingScheduleSelect"><span>ScheduleID</span><select id="pricingScheduleSelect"></select></label>
+                <label class="editor-field pricing-schedule-picker" for="pricingStructureType"><span>Structure</span><select id="pricingStructureType"><option>Step Pricing</option><option>Flat Pricing</option><option>3 Months Free</option><option>3 Year Price Lock</option></select></label>
+                <button id="pricingScheduleCreateNew" class="btn primary" type="button">New ScheduleID</button>
+                <button id="pricingScheduleAddRow" class="btn" type="button">Add Row</button>
+              </div>
+              <div class="pricing-editor-layout">
+                <form id="pricingScheduleEditorForm" class="pricing-schedule-form" aria-label="Pricing schedule rows"></form>
+                <aside class="pricing-editor-side">
+                  <div id="pricingScheduleUsage" class="usage-card"></div>
+                  <div id="pricingSchedulePreview" class="usage-card"></div>
+                </aside>
+              </div>
+              <div class="persona-editor-footer">
+                <p class="muted">Validates overlaps, missing coverage, 36-month promotions, Intro Free structure, month labels, and blank prices. Database Health runs after save.</p>
+                <button id="pricingScheduleSave" class="btn primary" type="button">Save Pricing Schedule</button>
+              </div>
+            </section>
             <section class="manage-section"><h3>Modifiers</h3><p class="muted">Editing controls will be added here.</p></section>
             <section class="manage-section"><h3>Disclaimers</h3><p class="muted">Editing controls will be added here.</p></section>
             <section class="manage-section"><h3>Assets</h3><p class="muted">Editing controls will be added here.</p></section>

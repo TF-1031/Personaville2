@@ -53,6 +53,7 @@ function renderAll(){
   renderEditingStatus();
   renderPersonaEditor();
   renderSpeedOptionEditor();
+  renderPricingScheduleEditor();
   fillExportPicker();
   renderExportCartTray();
   document.getElementById("dbStatus").textContent = "Database loaded";
@@ -287,6 +288,117 @@ function moveSelectedSpeedOptionEditor(direction){
   moveSpeedOption(editorSelectedSpeedKey, direction);
   runDatabaseHealth();
   renderAll();
+}
+
+
+
+let editorSelectedScheduleID = "";
+function pricingEditorRows(){
+  return pricingRowsForSchedule(editorSelectedScheduleID);
+}
+function renderPricingScheduleEditor(){
+  const select = document.getElementById("pricingScheduleSelect");
+  const form = document.getElementById("pricingScheduleEditorForm");
+  const usage = document.getElementById("pricingScheduleUsage");
+  const preview = document.getElementById("pricingSchedulePreview");
+  if(!select || !form) return;
+  const ids = pricingScheduleIDs();
+  if(!editorSelectedScheduleID && ids[0]) editorSelectedScheduleID = ids[0];
+  select.innerHTML = "";
+  ids.forEach(id => select.appendChild(el("option",{value:id, selected:id===editorSelectedScheduleID},[id])));
+  renderPricingScheduleRowsForm(pricingEditorRows());
+  renderPricingScheduleUsage(usage);
+  renderPricingSchedulePreview(preview);
+}
+function pricingRowField(row, index, field){
+  const id = `pricing-${index}-${field}`;
+  const value = row[field] ?? "";
+  const input = field === "DisplayAsFree" ? el("select",{id, name:field},[["FALSE","Paid"],["TRUE","Free"]].map(([v,l])=>el("option",{value:v, selected:String(value).toUpperCase()===v},[l]))) :
+    el("input",{id, name:field, value, type:["Sequence","StartMonth","EndMonth","Price","StrikeThroughPrice"].includes(field)?"number":"text", step:["Price","StrikeThroughPrice"].includes(field)?"0.01":"1"});
+  return el("label",{class:"editor-field"},[el("span",{},[field]), input]);
+}
+function renderPricingScheduleRowsForm(rows){
+  const form = document.getElementById("pricingScheduleEditorForm");
+  form.innerHTML = "";
+  if(!editorSelectedScheduleID){ form.appendChild(emptyState("Select or create a ScheduleID.")); return; }
+  rows.forEach((row,index)=>{
+    const card = el("div",{class:"pricing-row-card", "data-index":String(index)},[
+      el("div",{class:"pricing-row-head"},[
+        el("strong",{},[`Row ${index + 1}: ${row.DisplayLabel || "Unlabeled"}`]),
+        el("span",{class:"muted"},[`${row.ReferenceID || "No ReferenceID"} • ${truthy(row.DisplayAsFree) ? "Free" : money(row.Price)}`])
+      ]),
+      el("div",{class:"month-range-editor", role:"group", "aria-label":`Month range for row ${index + 1}`},Array.from({length:36},(_,i)=>{
+        const month = i + 1;
+        const active = month >= Number(row.StartMonth || 0) && month <= Number(row.EndMonth || 0);
+        return el("button",{type:"button", class:`month-chip${active?" active":""}`, onclick:()=>{
+          form.querySelector(`[data-index="${index}"] [name="StartMonth"]`).value = Math.min(Number(form.querySelector(`[data-index="${index}"] [name="StartMonth"]`).value || month), month);
+          form.querySelector(`[data-index="${index}"] [name="EndMonth"]`).value = Math.max(Number(form.querySelector(`[data-index="${index}"] [name="EndMonth"]`).value || month), month);
+          renderPricingSchedulePreview(document.getElementById("pricingSchedulePreview"));
+        }},[String(month)]);
+      })),
+      el("div",{class:"pricing-row-fields"},PRICING_SCHEDULE_FIELDS.map(field => pricingRowField(row,index,field))),
+      el("div",{class:"persona-editor-toolbar"},[
+        el("button",{class:"btn", type:"button", onclick:()=>duplicatePricingEditorRow(index)},["Duplicate Row"]),
+        el("button",{class:"btn", type:"button", onclick:()=>movePricingEditorRow(index,-1)},["Move Up"]),
+        el("button",{class:"btn", type:"button", onclick:()=>movePricingEditorRow(index,1)},["Move Down"]),
+        el("button",{class:"btn danger", type:"button", onclick:()=>removePricingEditorRow(index)},["Remove from Working Copy"])
+      ])
+    ]);
+    form.appendChild(card);
+  });
+}
+function pricingEditorDraftRows(){
+  return [...document.querySelectorAll("#pricingScheduleEditorForm .pricing-row-card")].map(card => {
+    const row = {};
+    PRICING_SCHEDULE_FIELDS.forEach(field => { row[field] = card.querySelector(`[name="${field}"]`)?.value ?? ""; });
+    return row;
+  });
+}
+function renderPricingScheduleUsage(box){
+  if(!box) return;
+  const usage = personasUsingSchedule(editorSelectedScheduleID);
+  box.innerHTML = "";
+  box.appendChild(el("h4",{},["Personas / speeds using this schedule"]));
+  if(!usage.length){ box.appendChild(el("p",{class:"muted"},["No current persona speed uses this ScheduleID."])); return; }
+  box.appendChild(el("ul",{},usage.map(item => el("li",{},[`${item.PersonaName || item.PersonaID} — ${item.DisplaySpeed || item.SpeedOption} (${item.ReferenceID})${item.Active ? "" : " inactive"}`]))));
+}
+function renderPricingSchedulePreview(box){
+  if(!box) return;
+  const rows = pricingEditorDraftRows().length ? pricingEditorDraftRows() : pricingEditorRows();
+  const analysis = scheduleEditorAnalysis(rows);
+  box.innerHTML = "";
+  box.appendChild(el("h4",{},["Automatic schedule preview"]));
+  rows.sort((a,b)=>Number(a.Sequence||0)-Number(b.Sequence||0)).forEach(row => box.appendChild(el("div",{class:"pricing-preview-row"},[`${row.DisplayLabel || healthMonthLabel(row)}: ${truthy(row.DisplayAsFree) ? "FREE" : (row.Price === "" ? "No price entered" : money(row.Price))}${row.StrikeThroughPrice ? ` (strike ${bareMoney(row.StrikeThroughPrice)})` : ""}`])));
+  (analysis.records.length ? analysis.records : [{message:"No overlapping ranges or invalid labels detected."}]).forEach(record => box.appendChild(el("p",{class:record.type ? "editor-warning" : "muted"},[record.message])));
+}
+function addPricingEditorRow(){
+  const rows = pricingEditorDraftRows();
+  const template = rows[rows.length - 1] || {ScheduleID:editorSelectedScheduleID, ReferenceID:"", Sequence:0, StartMonth:1, EndMonth:1, DisplayLabel:"Month 1", Price:"", DisplayAsFree:"FALSE", StrikeThroughPrice:""};
+  rows.push({...template, Sequence:rows.length + 1, StartMonth:"", EndMonth:"", DisplayLabel:"", Price:"", StrikeThroughPrice:""});
+  renderPricingScheduleRowsForm(rows);
+}
+function duplicatePricingEditorRow(index){ const rows = pricingEditorDraftRows(); rows.splice(index + 1, 0, {...rows[index], Sequence:index + 2}); rows.forEach((row,i)=>row.Sequence=i+1); renderPricingScheduleRowsForm(rows); }
+function movePricingEditorRow(index, direction){ const rows = pricingEditorDraftRows(); const swap = index + direction; if(swap < 0 || swap >= rows.length) return; [rows[index], rows[swap]] = [rows[swap], rows[index]]; rows.forEach((row,i)=>row.Sequence=i+1); renderPricingScheduleRowsForm(rows); }
+function removePricingEditorRow(index){ if(!window.confirm("Remove this pricing row from the working copy?")) return; const rows = pricingEditorDraftRows(); rows.splice(index,1); rows.forEach((row,i)=>row.Sequence=i+1); renderPricingScheduleRowsForm(rows); }
+function createPricingScheduleEditor(){
+  const id = window.prompt("New ScheduleID");
+  if(!id) return;
+  if(pricingScheduleIDs().includes(id)){ alert("ScheduleID already exists."); return; }
+  startEditingSession();
+  editorSelectedScheduleID = id;
+  renderPricingScheduleRowsForm([{ScheduleID:id, ReferenceID:"", Sequence:1, StartMonth:1, EndMonth:36, DisplayLabel:"36 Months", Price:"", DisplayAsFree:"FALSE", StrikeThroughPrice:""}]);
+  renderPricingScheduleUsage(document.getElementById("pricingScheduleUsage"));
+  renderPricingSchedulePreview(document.getElementById("pricingSchedulePreview"));
+}
+function savePricingScheduleEditor(){
+  const rows = pricingEditorDraftRows();
+  const type = document.getElementById("pricingStructureType")?.value || "";
+  const validation = validatePricingScheduleRows(rows, {scheduleID:editorSelectedScheduleID, isNew:!pricingScheduleIDs().includes(editorSelectedScheduleID), pricingType:type});
+  if(!validation.valid){ alert(Object.entries(validation.errors).map(([field,msg]) => `${field}: ${msg}`).join("\n")); renderPricingSchedulePreview(document.getElementById("pricingSchedulePreview")); return; }
+  savePricingScheduleRows(editorSelectedScheduleID, rows, {isNew:!pricingScheduleIDs().includes(editorSelectedScheduleID), pricingType:type});
+  runDatabaseHealth();
+  renderAll();
+  setAdminSection("health");
 }
 
 function appVersion(){
