@@ -51,6 +51,7 @@ function renderAll(){
   renderSourceBanner();
   renderPublishPanel();
   renderEditingStatus();
+  renderPersonaEditor();
   fillExportPicker();
   renderExportCartTray();
   document.getElementById("dbStatus").textContent = "Database loaded";
@@ -74,6 +75,99 @@ function renderEditingStatus(){
     state.appendChild(el("div",{class:"status-card kpi"},[el("div",{class:"num"},[String(changes.modified || 0)]), el("div",{class:"label"},["Modified records"])]));
     state.appendChild(el("div",{class:"status-card kpi"},[el("div",{class:"num"},[String(changes.deleted || 0)]), el("div",{class:"label"},["Deleted records"])]));
   }
+}
+
+let editorSelectedPersonaID = "";
+function personaEditorRows(){
+  const q = (document.getElementById("personaEditorSearch")?.value || "").toLowerCase().trim();
+  return DB.personas.filter(p => !q || [p.PersonaID,p.PersonaName,p.FamilyGroup,p.PricingSet,p.Status].join(" ").toLowerCase().includes(q));
+}
+function personaEditorStateClass(p){
+  if(String(p.Status || "").toLowerCase() === "deleted") return " deleted";
+  const state = editingSessionState().recordStates?.[sheetRecordKey(SHEET_MAP.personas, p, 0)] || "";
+  return state ? ` ${state}` : "";
+}
+function renderPersonaEditor(){
+  const list = document.getElementById("personaEditorList");
+  const form = document.getElementById("personaEditorForm");
+  if(!list || !form) return;
+  const rows = personaEditorRows();
+  if(!editorSelectedPersonaID && rows[0]) editorSelectedPersonaID = rows[0].PersonaID;
+  list.innerHTML = "";
+  rows.forEach(p => list.appendChild(el("button",{class:`persona-editor-row${p.PersonaID===editorSelectedPersonaID?" active":""}${personaEditorStateClass(p)}`, type:"button", onclick:()=>{editorSelectedPersonaID=p.PersonaID; renderPersonaEditor();}},[
+    el("strong",{},[p.PersonaName || "Untitled"]),
+    el("span",{},[`${p.PersonaID || "No ID"} • ${p.Status || "No status"}`])
+  ])));
+  document.getElementById("personaEditorCount").textContent = `${rows.length} persona${rows.length===1?"":"s"}`;
+  renderPersonaEditorForm(DB.personas.find(p => p.PersonaID === editorSelectedPersonaID) || null);
+}
+function editorField(name, value, errors={}){
+  const required = PERSONA_REQUIRED_FIELDS.includes(name);
+  const id = `personaEdit-${name}`;
+  const input = ["Notes"].includes(name) ? el("textarea",{id, name, rows:"3"},[value || ""]) :
+    ["EquipInc","SymSpeed"].includes(name) ? el("select",{id, name},[["TRUE","True"],["FALSE","False"]].map(([v,l])=>el("option",{value:v, selected:String(value).toUpperCase()===v},[l]))) :
+    el("input",{id, name, value:value ?? ""});
+  return el("label",{class:`editor-field ${errors[name]?"invalid":""}`},[
+    el("span",{},[name, required ? el("b",{title:"Required"},[" *"]) : null]), input,
+    errors[name] ? el("em",{},[errors[name]]) : null
+  ]);
+}
+function renderPersonaEditorForm(persona, errors={}){
+  const form = document.getElementById("personaEditorForm");
+  form.innerHTML = "";
+  if(!persona){ form.appendChild(emptyState("Select or create a persona.")); return; }
+  const counts = personaRelationships(persona.PersonaID);
+  form.dataset.originalPersonaId = persona.PersonaID || "";
+  form.appendChild(el("div",{class:"editor-related-counts"},[
+    el("span",{},[`Speeds: ${counts.speeds}`]), el("span",{},[`Modifiers: ${counts.modifiers}`]), el("span",{},[`Disclaimer links: ${counts.disclaimers}`])
+  ]));
+  PERSONA_EDITOR_FIELDS.forEach(field => form.appendChild(editorField(field, persona[field], errors)));
+}
+function personaEditorDraft(){
+  const form = document.getElementById("personaEditorForm");
+  const draft = {};
+  PERSONA_EDITOR_FIELDS.forEach(field => { draft[field] = form.elements[field]?.value ?? ""; });
+  return draft;
+}
+function savePersonaEditor(){
+  const form = document.getElementById("personaEditorForm");
+  const original = form.dataset.originalPersonaId || "";
+  const draft = personaEditorDraft();
+  if(original && draft.PersonaID !== original && personaHasRelationships(original) && !window.confirm("This PersonaID has speed, modifier, or disclaimer relationships. Change it anyway?")) return;
+  const validation = validatePersonaDraft(draft, original);
+  if(!validation.valid){ renderPersonaEditorForm(draft, validation.errors); return; }
+  const saved = savePersonaDraft(draft, original, "Browser Persona Editor");
+  runDatabaseHealth();
+  editorSelectedPersonaID = saved.PersonaID;
+  renderAll();
+  setAdminSection("health");
+  setView("manage", {focus:false});
+}
+function createNewPersonaEditor(){
+  startEditingSession();
+  const id = nextSafePersonaID();
+  editorSelectedPersonaID = id;
+  renderPersonaEditorForm({PersonaID:id, Status:"Draft", EquipInc:"FALSE", SymSpeed:"FALSE"});
+}
+function duplicateSelectedPersonaEditor(){
+  if(!editorSelectedPersonaID) return;
+  const saved = duplicatePersona(editorSelectedPersonaID, "Browser Persona Editor");
+  runDatabaseHealth();
+  editorSelectedPersonaID = saved.PersonaID;
+  renderAll();
+}
+function statusSelectedPersonaEditor(status){
+  if(!editorSelectedPersonaID) return;
+  setPersonaStatus(editorSelectedPersonaID, status, "Browser Persona Editor");
+  runDatabaseHealth();
+  renderAll();
+}
+function deleteSelectedPersonaEditor(){
+  if(!editorSelectedPersonaID) return;
+  if(!window.confirm("Mark this persona as Deleted in the working copy? It will not be permanently removed.")) return;
+  markPersonaDeleted(editorSelectedPersonaID, "Browser Persona Editor");
+  runDatabaseHealth();
+  renderAll();
 }
 
 function appVersion(){

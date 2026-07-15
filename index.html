@@ -160,7 +160,31 @@
           </div>
           <div id="editingStateSummary" class="kpis dashboard-overview" aria-live="polite"></div>
           <div class="manage-workspace-grid" aria-label="Manage workspace sections">
-            <section class="manage-section"><h3>Personas</h3><p class="muted">Editing controls will be added here.</p></section>
+            <section class="manage-section persona-editor" aria-labelledby="personaEditorHeading">
+              <div class="section-head compact">
+                <div>
+                  <h3 id="personaEditorHeading">Persona Editor</h3>
+                  <p class="muted">Create, inspect, edit, duplicate, activate, deactivate, or mark personas for deletion in the working copy.</p>
+                </div>
+                <span id="personaEditorCount" class="pill gray">0 personas</span>
+              </div>
+              <div class="persona-editor-toolbar">
+                <input id="personaEditorSearch" class="search" placeholder="Search personas by name, ID, family, pricing, or status" autocomplete="off" />
+                <button id="personaCreateNew" class="btn primary" type="button">New Persona</button>
+                <button id="personaDuplicate" class="btn" type="button">Duplicate</button>
+                <button id="personaActivate" class="btn" type="button">Activate</button>
+                <button id="personaDeactivate" class="btn" type="button">Deactivate</button>
+                <button id="personaMarkDeleted" class="btn" type="button">Mark Deleted</button>
+              </div>
+              <div class="persona-editor-layout">
+                <div id="personaEditorList" class="persona-editor-list" aria-label="Searchable persona list"></div>
+                <form id="personaEditorForm" class="persona-editor-form" aria-label="Persona fields"></form>
+              </div>
+              <div class="persona-editor-footer">
+                <p class="muted">Required fields are marked with *. Database Health runs after every save.</p>
+                <button id="personaEditorSave" class="btn primary" type="button">Save Persona</button>
+              </div>
+            </section>
             <section class="manage-section"><h3>Speed Options</h3><p class="muted">Editing controls will be added here.</p></section>
             <section class="manage-section"><h3>Pricing</h3><p class="muted">Editing controls will be added here.</p></section>
             <section class="manage-section"><h3>Modifiers</h3><p class="muted">Editing controls will be added here.</p></section>
