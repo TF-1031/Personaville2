@@ -173,6 +173,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("speedOptionMoveDown")?.addEventListener("click", () => moveSelectedSpeedOptionEditor(1));
   document.getElementById("speedOptionRemove")?.addEventListener("click", removeSelectedSpeedOptionEditor);
   document.getElementById("speedOptionEditorSave")?.addEventListener("click", saveSpeedOptionEditor);
+  document.getElementById("pricingScheduleSelect")?.addEventListener("change", event => { editorSelectedScheduleID = event.target.value; renderPricingScheduleEditor(); });
+  document.getElementById("pricingScheduleAddRow")?.addEventListener("click", addPricingEditorRow);
+  document.getElementById("pricingScheduleCreateNew")?.addEventListener("click", createPricingScheduleEditor);
+  document.getElementById("pricingScheduleSave")?.addEventListener("click", savePricingScheduleEditor);
+  document.getElementById("pricingStructureType")?.addEventListener("change", () => renderPricingSchedulePreview(document.getElementById("pricingSchedulePreview")));
+  document.getElementById("pricingScheduleEditorForm")?.addEventListener("input", () => renderPricingSchedulePreview(document.getElementById("pricingSchedulePreview")));
   window.addEventListener("beforeunload", event => {
     if(!editingHasUnsavedChanges()) return;
     event.preventDefault();

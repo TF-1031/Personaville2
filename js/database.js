@@ -758,6 +758,119 @@ function markPersonaDeleted(personaID, modifiedBy="Persona Editor"){
   if(!row) throw new Error("Persona not found.");
   return savePersonaDraft({...row, Status:"Deleted", Notes:[row.Notes, "Marked for deletion in working copy"].filter(Boolean).join(" | ")}, personaID, modifiedBy);
 }
+
+const PRICING_SCHEDULE_FIELDS = ["ScheduleID", "ReferenceID", "Sequence", "StartMonth", "EndMonth", "DisplayLabel", "Price", "DisplayAsFree", "StrikeThroughPrice"];
+function pricingScheduleKey(row){
+  return `${row.ScheduleID || ""}|${row.ReferenceID || ""}|${row.Sequence ?? ""}`;
+}
+function pricingScheduleIDs(){
+  return getUnique(DB.schedules, "ScheduleID");
+}
+function pricingRowsForSchedule(scheduleID){
+  return sortedScheduleRows(DB.schedules.filter(row => row.ScheduleID === scheduleID));
+}
+function personasUsingSchedule(scheduleID){
+  return DB.speedOptions
+    .filter(speed => speed.ScheduleID === scheduleID)
+    .map(speed => {
+      const persona = DB.personas.find(row => row.PersonaID === speed.PersonaID) || {};
+      return {
+        PersonaID:speed.PersonaID || "",
+        PersonaName:persona.PersonaName || "",
+        SpeedOption:speed.SpeedOption || "",
+        DisplaySpeed:speed.DisplaySpeed || "",
+        ReferenceID:speed.ReferenceID || "",
+        PricingType:speed.PricingType || "",
+        Active:truthy(speed.Active)
+      };
+    })
+    .sort((a,b)=>[a.PersonaName,a.DisplaySpeed,a.ReferenceID].join("|").localeCompare([b.PersonaName,b.DisplaySpeed,b.ReferenceID].join("|")));
+}
+function normalizePricingRowForSave(input, existing={}){
+  const row = {...existing};
+  PRICING_SCHEDULE_FIELDS.forEach(field => { row[field] = input[field] ?? ""; });
+  row.Sequence = row.Sequence === "" ? "" : Number(row.Sequence);
+  row.StartMonth = row.StartMonth === "" ? "" : Number(row.StartMonth);
+  row.EndMonth = row.EndMonth === "" ? "" : Number(row.EndMonth);
+  row.Price = row.Price === "" ? "" : Number(row.Price);
+  row.DisplayAsFree = truthy(row.DisplayAsFree) ? "TRUE" : "FALSE";
+  row.StrikeThroughPrice = row.StrikeThroughPrice === "" ? "" : Number(row.StrikeThroughPrice);
+  return row;
+}
+function scheduleEditorAnalysis(rows){
+  const records = [];
+  const seenMonths = new Map();
+  const missing = [];
+  const invalidLabels = [];
+  const overlaps = [];
+  sortedScheduleRows(rows).forEach(row => {
+    if(!rowHasValidMonthLabel(row)) invalidLabels.push(row);
+    const months = monthsFromScheduleRow(row);
+    months.forEach(month => {
+      if(month < 1 || month > 36) invalidLabels.push(row);
+      if(seenMonths.has(month)) overlaps.push({month, first:seenMonths.get(month), second:row});
+      else seenMonths.set(month, row);
+    });
+  });
+  for(let month=1; month<=36; month++) if(!seenMonths.has(month)) missing.push(month);
+  if(overlaps.length) records.push({type:"overlap", message:`Overlapping month ranges: ${formatMonthRanges(overlaps.map(o => o.month)).join("; ")}.`});
+  if(missing.length) records.push({type:"missing", message:`Missing month coverage: ${formatMonthRanges(missing).join("; ")}.`});
+  if(invalidLabels.length) records.push({type:"label", message:"One or more rows have invalid month labels or months outside 1-36."});
+  return {valid:!overlaps.length && !invalidLabels.length, missingMonths:missing, overlaps, invalidLabels, records};
+}
+function validatePricingScheduleRows(rows, options={}){
+  const errors = {};
+  const scheduleID = String(options.scheduleID || rows[0]?.ScheduleID || "").trim();
+  if(!scheduleID) errors.ScheduleID = "ScheduleID is required.";
+  if(options.isNew && DB.schedules.some(row => row.ScheduleID === scheduleID)) errors.ScheduleID = "ScheduleID already exists.";
+  rows.forEach((row, index) => {
+    const prefix = `row${index}`;
+    ["ScheduleID", "ReferenceID", "Sequence", "StartMonth", "EndMonth", "DisplayLabel"].forEach(field => { if(!String(row[field] ?? "").trim()) errors[`${prefix}.${field}`] = "Required"; });
+    if(scheduleID && String(row.ScheduleID || "").trim() !== scheduleID) errors[`${prefix}.ScheduleID`] = "Rows must stay within the selected ScheduleID; another schedule is never silently modified.";
+    const start = Number(row.StartMonth); const end = Number(row.EndMonth);
+    if(!Number.isInteger(start) || start < 1 || start > 36) errors[`${prefix}.StartMonth`] = "Use month 1-36.";
+    if(!Number.isInteger(end) || end < start || end > 36) errors[`${prefix}.EndMonth`] = "End month must be between StartMonth and 36.";
+    if(!truthy(row.DisplayAsFree) && String(row.Price ?? "").trim() === "") errors[`${prefix}.Price`] = "Enter a price or mark free; prices are never invented.";
+    if(String(row.Price ?? "").trim() !== "" && Number.isNaN(Number(row.Price))) errors[`${prefix}.Price`] = "Price must be numeric.";
+    if(String(row.StrikeThroughPrice ?? "").trim() !== "" && Number.isNaN(Number(row.StrikeThroughPrice))) errors[`${prefix}.StrikeThroughPrice`] = "Strike-through price must be numeric.";
+    if(!rowHasValidMonthLabel(row)) errors[`${prefix}.DisplayLabel`] = "Use labels like Months 1-12, Month 6, or 36 Months.";
+  });
+  const analysis = scheduleEditorAnalysis(rows);
+  if(analysis.overlaps.length) errors.MonthRanges = "Month ranges cannot overlap.";
+  if(analysis.invalidLabels.length) errors.DisplayLabel = "Invalid month labels detected.";
+  const pricingType = String(options.pricingType || "").toLowerCase();
+  if(/3\s*year\s*price\s*lock/.test(pricingType) && analysis.missingMonths.length) errors.Promotion = "3 Year Price Lock must cover all 36 months.";
+  if(/flat pricing|^flat$/.test(pricingType)){
+    if(rows.length !== 1 || rows.some(row => truthy(row.DisplayAsFree))) errors.Flat = "Flat pricing requires exactly one paid row.";
+  }
+  if(/step pricing/.test(pricingType)){
+    if(rows.filter(row => !truthy(row.DisplayAsFree)).length < 2) errors.Step = "Step pricing requires at least two paid rows.";
+  }
+  if(/3\s*months\s*free|intro free/.test(pricingType)){
+    const freeMonths = scheduleCoverageMonths(rows.filter(row => truthy(row.DisplayAsFree)));
+    const paidFirstYear = scheduleCoverageMonths(rows.filter(row => !truthy(row.DisplayAsFree) && [...monthsFromScheduleRow(row)].some(month => month <= 12)));
+    if(!sameMonthSet(freeMonths, [1,6,12]) || !sameMonthSet(paidFirstYear, [2,3,4,5,7,8,9,10,11])) errors.IntroFree = "Intro Free requires free months 1, 6, and 12 with paid months 2-5 and 7-11.";
+  }
+  return {valid:Object.keys(errors).length === 0, errors, analysis};
+}
+function savePricingScheduleRows(scheduleID, inputRows, meta={}){
+  if(!EditingSession.isEditing) startEditingSession();
+  const normalizedRows = inputRows.map(row => normalizePricingRowForSave({...row, ScheduleID:row.ScheduleID || scheduleID}));
+  const validation = validatePricingScheduleRows(normalizedRows, {scheduleID, isNew:meta.isNew, pricingType:meta.pricingType});
+  if(!validation.valid) throw new Error(Object.entries(validation.errors).map(([field,msg]) => `${field}: ${msg}`).join("\n"));
+  const raw = activeDatabaseSnapshot();
+  const existing = Array.isArray(raw[SHEET_MAP.schedules]) ? raw[SHEET_MAP.schedules] : [];
+  raw[SHEET_MAP.schedules] = existing.filter(row => row.ScheduleID !== scheduleID).concat(normalizedRows);
+  updateWorkingCopy(raw, meta.isNew ? "pricing-schedule-create" : "pricing-schedule-save", {sheet:SHEET_MAP.schedules, ScheduleID:scheduleID});
+  return pricingRowsForSchedule(scheduleID);
+}
+function removePricingScheduleRow(scheduleID, sequence){
+  if(!EditingSession.isEditing) startEditingSession();
+  const raw = activeDatabaseSnapshot();
+  raw[SHEET_MAP.schedules] = (raw[SHEET_MAP.schedules] || []).filter(row => !(row.ScheduleID === scheduleID && Number(row.Sequence) === Number(sequence)));
+  updateWorkingCopy(raw, "pricing-row-remove", {sheet:SHEET_MAP.schedules, ScheduleID:scheduleID, Sequence:sequence});
+}
+
 function runDatabaseHealth(){
   DB.health = buildHealth();
   DB.raw[SHEET_MAP.health] = DB.health.map(row => ({Section:row.Section, Check:row.Check, Status:row.Status, Count:row.Count, Details:row.Details}));
