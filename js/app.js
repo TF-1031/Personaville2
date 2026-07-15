@@ -179,6 +179,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("pricingScheduleSave")?.addEventListener("click", savePricingScheduleEditor);
   document.getElementById("pricingStructureType")?.addEventListener("change", () => renderPricingSchedulePreview(document.getElementById("pricingSchedulePreview")));
   document.getElementById("pricingScheduleEditorForm")?.addEventListener("input", () => renderPricingSchedulePreview(document.getElementById("pricingSchedulePreview")));
+  document.getElementById("modifierCreateNew")?.addEventListener("click", createModifierEditor);
+  document.getElementById("modifierActivate")?.addEventListener("click", () => activeSelectedModifierEditor(true));
+  document.getElementById("modifierDeactivate")?.addEventListener("click", () => activeSelectedModifierEditor(false));
+  document.getElementById("modifierEditorSave")?.addEventListener("click", saveModifierEditor);
+  document.getElementById("personaModifierAdd")?.addEventListener("click", addPersonaModifierEditor);
+  document.getElementById("disclaimerEditorSave")?.addEventListener("click", saveDisclaimerEditor);
+  document.getElementById("disclaimerDuplicate")?.addEventListener("click", duplicateDisclaimerEditor);
+  document.getElementById("disclaimerEditorForm")?.addEventListener("input", () => renderDisclaimerPreviewAndUsage(disclaimerEditorDraft()));
   window.addEventListener("beforeunload", event => {
     if(!editingHasUnsavedChanges()) return;
     event.preventDefault();

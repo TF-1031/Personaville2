@@ -236,8 +236,24 @@
                 <button id="pricingScheduleSave" class="btn primary" type="button">Save Pricing Schedule</button>
               </div>
             </section>
-            <section class="manage-section"><h3>Modifiers</h3><p class="muted">Editing controls will be added here.</p></section>
-            <section class="manage-section"><h3>Disclaimers</h3><p class="muted">Editing controls will be added here.</p></section>
+            <section class="manage-section modifier-editor" aria-labelledby="modifierEditorHeading">
+              <div class="section-head compact"><div><h3 id="modifierEditorHeading">Modifier Editor</h3><p class="muted">Create, edit, activate/deactivate, and inspect modifier usage.</p></div><span id="modifierEditorCount" class="pill gray">0 modifiers</span></div>
+              <div class="persona-editor-toolbar"><button id="modifierCreateNew" class="btn primary" type="button">New Modifier</button><button id="modifierActivate" class="btn" type="button">Activate</button><button id="modifierDeactivate" class="btn" type="button">Deactivate</button></div>
+              <div class="persona-editor-layout"><div id="modifierEditorList" class="persona-editor-list"></div><form id="modifierEditorForm" class="persona-editor-form"></form></div>
+              <div class="persona-editor-footer"><p class="muted">Shows every persona using the selected modifier. Database Health runs after save.</p><button id="modifierEditorSave" class="btn primary" type="button">Save Modifier</button></div>
+            </section>
+            <section class="manage-section persona-modifier-editor" aria-labelledby="personaModifierEditorHeading">
+              <div class="section-head compact"><div><h3 id="personaModifierEditorHeading">Persona Modifier Relationships</h3><p class="muted">Add, remove, reorder, and validate modifier relationships for the selected persona.</p></div></div>
+              <div class="persona-editor-toolbar"><label class="editor-field"><span>Add Modifier</span><select id="personaModifierAddSelect"></select></label><button id="personaModifierAdd" class="btn primary" type="button">Add to Persona</button></div>
+              <div id="personaModifierWarnings" class="usage-card"></div><div id="personaModifierList" class="persona-editor-list relationship-list"></div>
+            </section>
+            <section class="manage-section disclaimer-editor" aria-labelledby="disclaimerEditorHeading">
+              <div class="section-head compact"><div><h3 id="disclaimerEditorHeading">Disclaimer Editor</h3><p class="muted">Edit exact legal copy, preview formatting, inspect linked personas, and duplicate existing disclaimers.</p></div><span id="disclaimerEditorCount" class="pill gray">0 disclaimers</span></div>
+              <div class="persona-editor-toolbar"><button id="disclaimerDuplicate" class="btn" type="button">Duplicate Selected</button></div>
+              <div class="persona-editor-layout"><div id="disclaimerEditorList" class="persona-editor-list"></div><form id="disclaimerEditorForm" class="persona-editor-form"></form></div>
+              <div class="pricing-editor-layout"><div id="disclaimerPreview" class="usage-card disclaimer-preview"></div><div id="disclaimerUsage" class="usage-card"></div></div>
+              <div class="persona-editor-footer"><p class="muted">Legal copy is preserved exactly as typed; no automatic rewriting is performed.</p><button id="disclaimerEditorSave" class="btn primary" type="button">Save Disclaimer</button></div>
+            </section>
             <section class="manage-section"><h3>Assets</h3><p class="muted">Editing controls will be added here.</p></section>
           </div>
         </div>
