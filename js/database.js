@@ -595,6 +595,90 @@ function enhanceDatabase(){
     p.disclaimer = disclaimersById[p.DisclaimerID] || null;
   });
 }
+
+const PERSONA_EDITOR_FIELDS = ["PersonaID", "PersonaName", "FamilyGroup", "FamilyGroupID", "PricingSet", "PricingSetID", "Status", "PromoIcon", "EquipInc", "SymSpeed", "DisclaimerID", "Notes", "ModifiedBy", "ModifiedDate"];
+const PERSONA_REQUIRED_FIELDS = ["PersonaID", "PersonaName", "FamilyGroup", "FamilyGroupID", "PricingSet", "PricingSetID", "Status"];
+function personaRelationships(personaID){
+  const id = String(personaID || "").trim();
+  return {
+    speeds: DB.speedOptions.filter(row => row.PersonaID === id).length,
+    modifiers: DB.personaModifiers.filter(row => row.PersonaID === id).length,
+    disclaimers: DB.personas.filter(row => row.PersonaID === id && row.DisclaimerID).length
+  };
+}
+function personaHasRelationships(personaID){
+  const counts = personaRelationships(personaID);
+  return counts.speeds + counts.modifiers + counts.disclaimers > 0;
+}
+function nextSafePersonaID(){
+  const used = new Set(DB.personas.map(row => String(row.PersonaID || "").trim()).filter(Boolean));
+  let max = 0;
+  used.forEach(id => {
+    const match = id.match(/^PM_(\d+)$/i);
+    if(match) max = Math.max(max, Number(match[1]));
+  });
+  let candidate = "";
+  do {
+    max += 1;
+    candidate = `PM_${String(max).padStart(3, "0")}`;
+  } while(used.has(candidate));
+  return candidate;
+}
+function normalizePersonaForSave(input, existingPersona={}, modifiedBy="Persona Editor"){
+  const now = new Date().toISOString();
+  const row = {...existingPersona};
+  PERSONA_EDITOR_FIELDS.forEach(field => { row[field] = input[field] ?? ""; });
+  row.EquipInc = truthy(row.EquipInc) ? "TRUE" : "FALSE";
+  row.SymSpeed = truthy(row.SymSpeed) ? "TRUE" : "FALSE";
+  row.ModifiedBy = modifiedBy || "Persona Editor";
+  row.ModifiedDate = now;
+  return row;
+}
+function validatePersonaDraft(input, originalPersonaID=""){
+  const errors = {};
+  PERSONA_REQUIRED_FIELDS.forEach(field => { if(!String(input[field] ?? "").trim()) errors[field] = "Required"; });
+  const id = String(input.PersonaID || "").trim();
+  if(id && !/^[A-Za-z0-9_-]+$/.test(id)) errors.PersonaID = "Use letters, numbers, underscores, or hyphens only.";
+  if(id && id !== originalPersonaID && DB.personas.some(row => row.PersonaID === id)) errors.PersonaID = "PersonaID already exists.";
+  if(input.DisclaimerID && !DB.disclaimers.some(row => row.DisclaimerID === input.DisclaimerID)) errors.DisclaimerID = "DisclaimerID does not exist.";
+  return {valid:Object.keys(errors).length === 0, errors};
+}
+function savePersonaDraft(input, originalPersonaID="", modifiedBy="Persona Editor"){
+  if(!EditingSession.isEditing) startEditingSession();
+  const validation = validatePersonaDraft(input, originalPersonaID);
+  if(!validation.valid) throw new Error(Object.entries(validation.errors).map(([field, msg]) => `${field}: ${msg}`).join("\n"));
+  const raw = activeDatabaseSnapshot();
+  const rows = Array.isArray(raw[SHEET_MAP.personas]) ? raw[SHEET_MAP.personas] : [];
+  const index = originalPersonaID ? rows.findIndex(row => row.PersonaID === originalPersonaID) : -1;
+  const saved = normalizePersonaForSave(input, index >= 0 ? rows[index] : {}, modifiedBy);
+  if(index >= 0) rows[index] = saved; else rows.push(saved);
+  raw[SHEET_MAP.personas] = rows;
+  updateWorkingCopy(raw, index >= 0 ? "persona-save" : "persona-create", {sheet:SHEET_MAP.personas, PersonaID:saved.PersonaID});
+  return saved;
+}
+function duplicatePersona(personaID, modifiedBy="Persona Editor"){
+  const source = DB.personas.find(row => row.PersonaID === personaID);
+  if(!source) throw new Error("Persona not found.");
+  const copy = {...source, PersonaID:nextSafePersonaID(), PersonaName:`${source.PersonaName || "Persona"} Copy`, Status:"Draft"};
+  return savePersonaDraft(copy, "", modifiedBy);
+}
+function setPersonaStatus(personaID, status, modifiedBy="Persona Editor"){
+  const row = DB.personas.find(item => item.PersonaID === personaID);
+  if(!row) throw new Error("Persona not found.");
+  return savePersonaDraft({...row, Status:status}, personaID, modifiedBy);
+}
+function markPersonaDeleted(personaID, modifiedBy="Persona Editor"){
+  const row = DB.personas.find(item => item.PersonaID === personaID);
+  if(!row) throw new Error("Persona not found.");
+  return savePersonaDraft({...row, Status:"Deleted", Notes:[row.Notes, "Marked for deletion in working copy"].filter(Boolean).join(" | ")}, personaID, modifiedBy);
+}
+function runDatabaseHealth(){
+  DB.health = buildHealth();
+  DB.raw[SHEET_MAP.health] = DB.health.map(row => ({Section:row.Section, Check:row.Check, Status:row.Status, Count:row.Count, Details:row.Details}));
+  if(EditingSession.isEditing && EditingSession.workingRaw) EditingSession.workingRaw[SHEET_MAP.health] = cloneDatabasePayload(DB.raw[SHEET_MAP.health]);
+  return DB.health;
+}
+
 function groupBy(arr, key){
   return arr.reduce((acc,row)=>{
     const k = row[key] || "";

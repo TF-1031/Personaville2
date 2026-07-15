@@ -158,6 +158,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     resetWorkingCopyFromPublished();
     renderAll();
   });
+  document.getElementById("personaEditorSearch")?.addEventListener("input", renderPersonaEditor);
+  document.getElementById("personaCreateNew")?.addEventListener("click", createNewPersonaEditor);
+  document.getElementById("personaDuplicate")?.addEventListener("click", duplicateSelectedPersonaEditor);
+  document.getElementById("personaActivate")?.addEventListener("click", () => statusSelectedPersonaEditor("Active"));
+  document.getElementById("personaDeactivate")?.addEventListener("click", () => statusSelectedPersonaEditor("Inactive"));
+  document.getElementById("personaMarkDeleted")?.addEventListener("click", deleteSelectedPersonaEditor);
+  document.getElementById("personaEditorSave")?.addEventListener("click", savePersonaEditor);
   window.addEventListener("beforeunload", event => {
     if(!editingHasUnsavedChanges()) return;
     event.preventDefault();
