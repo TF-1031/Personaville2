@@ -288,8 +288,9 @@ function currentBuildSummary(){
   };
 }
 function updatedDatabaseJson(){
-  if(!DB.loadedFromWorkbook || !DB.downloadableRaw) throw new Error("Upload Workbook must successfully load a workbook before downloading updated JSON.");
-  return JSON.stringify(DB.downloadableRaw, null, 2) + "\n";
+  const raw = EditingSession.isEditing ? activeDatabaseSnapshot() : (DB.loadedFromWorkbook ? DB.downloadableRaw : DB.raw);
+  if(!raw) throw new Error("No database is available for download.");
+  return JSON.stringify(raw, null, 2) + "\n";
 }
 function hasBlockingHealthErrors(){
   return currentBuildSummary().healthErrors > 0;
@@ -582,7 +583,7 @@ function enhanceDatabase(){
     p.PricingSet = displayPricingSet(p.PricingSet);
     p.IconPath = resolveIconPath(p.PromoIcon);
     p.IconRecord = iconsByFile[normalizeIconFile(p.PromoIcon)] || null;
-    p.speeds = (speedsByPersona[p.PersonaID] || []).sort((a,b) => Number(a.SortOrder||0)-Number(b.SortOrder||0));
+    p.speeds = (speedsByPersona[p.PersonaID] || []).sort((a,b) => Number(a.DisplayOrder || a.SortOrder || 0)-Number(b.DisplayOrder || b.SortOrder || 0));
     p.speeds.forEach(s => {
       // ReferenceID is reused across Standard, 3 Months Free, and Price Lock personas.
       // ScheduleID + ReferenceID is the exact schedule key for one persona speed.
@@ -598,6 +599,91 @@ function enhanceDatabase(){
 
 const PERSONA_EDITOR_FIELDS = ["PersonaID", "PersonaName", "FamilyGroup", "FamilyGroupID", "PricingSet", "PricingSetID", "Status", "PromoIcon", "EquipInc", "SymSpeed", "DisclaimerID", "Notes", "ModifiedBy", "ModifiedDate"];
 const PERSONA_REQUIRED_FIELDS = ["PersonaID", "PersonaName", "FamilyGroup", "FamilyGroupID", "PricingSet", "PricingSetID", "Status"];
+const SPEED_OPTION_FIELDS = ["ReferenceID", "PersonaID", "SpeedOption", "DisplaySpeed", "DownloadMbps", "UploadSpeed", "PricingType", "FirstPaidPrice", "RegularRate", "ScheduleID", "DisplayOrder", "Active"];
+const SPEED_OPTION_REQUIRED_FIELDS = ["ReferenceID", "PersonaID", "SpeedOption", "DisplaySpeed", "DownloadMbps", "UploadSpeed", "PricingType", "ScheduleID"];
+function speedDisplayOrder(row){
+  return row.DisplayOrder ?? row.SortOrder ?? "";
+}
+function speedOptionKey(row){
+  return `${row.PersonaID || ""}|${row.SpeedOption || ""}`;
+}
+function nextSpeedOptionForPersona(personaID){
+  const nums = DB.speedOptions.filter(row => row.PersonaID === personaID).map(row => String(row.SpeedOption || "").match(/^SO_(\d+)$/i)?.[1]).filter(Boolean).map(Number);
+  const next = (nums.length ? Math.max(...nums) : 0) + 1;
+  return `SO_${next}`;
+}
+function pricingSummaryForSpeed(speed){
+  const rows = sortedScheduleRows(getSchedulesForSpeed(speed));
+  if(!rows.length) return "No pricing rows resolve for this ScheduleID + ReferenceID.";
+  return rows.map(row => `${row.DisplayLabel || healthMonthLabel(row)}: ${truthy(row.DisplayAsFree) ? "FREE" : money(row.Price)}`).join(" | ");
+}
+function scheduleResolutionForSpeed(speed){
+  const rows = getSchedulesForSpeed(speed);
+  return {resolves: rows.length > 0, count: rows.length, summary: pricingSummaryForSpeed(speed)};
+}
+function validateSpeedOptionDraft(input, originalKey=""){
+  const errors = {};
+  SPEED_OPTION_REQUIRED_FIELDS.forEach(field => { if(!String(input[field] ?? "").trim()) errors[field] = "Required"; });
+  const personaID = String(input.PersonaID || "").trim();
+  if(personaID && !DB.personas.some(row => row.PersonaID === personaID)) errors.PersonaID = "PersonaID does not exist.";
+  const key = speedOptionKey(input);
+  if(key && key !== originalKey && DB.speedOptions.some(row => speedOptionKey(row) === key)) errors.SpeedOption = "PersonaID + SpeedOption must be unique.";
+  const ref = String(input.ReferenceID || "").trim();
+  if(ref && DB.speedOptions.some(row => row.PersonaID === personaID && row.ReferenceID === ref && speedOptionKey(row) !== originalKey)) errors.ReferenceID = "ReferenceID must be unique within the selected persona.";
+  return {valid:Object.keys(errors).length === 0, errors};
+}
+function normalizeSpeedOptionForSave(input, existing={}){
+  const row = {...existing};
+  SPEED_OPTION_FIELDS.forEach(field => { row[field] = input[field] ?? ""; });
+  row.Active = truthy(row.Active) ? "TRUE" : "FALSE";
+  row.DownloadMbps = row.DownloadMbps === "" ? "" : Number(row.DownloadMbps);
+  row.FirstPaidPrice = row.FirstPaidPrice === "" ? "" : Number(row.FirstPaidPrice);
+  row.RegularRate = row.RegularRate === "" ? "" : Number(row.RegularRate);
+  row.SortOrder = row.DisplayOrder === "" ? (existing.SortOrder ?? "") : Number(row.DisplayOrder);
+  delete row.DisplayOrder;
+  return row;
+}
+function saveSpeedOptionDraft(input, originalKey=""){
+  if(!EditingSession.isEditing) startEditingSession();
+  const validation = validateSpeedOptionDraft(input, originalKey);
+  if(!validation.valid) throw new Error(Object.entries(validation.errors).map(([field, msg]) => `${field}: ${msg}`).join("\n"));
+  const raw = activeDatabaseSnapshot();
+  const rows = Array.isArray(raw[SHEET_MAP.speedOptions]) ? raw[SHEET_MAP.speedOptions] : [];
+  const index = originalKey ? rows.findIndex(row => speedOptionKey(row) === originalKey) : -1;
+  const saved = normalizeSpeedOptionForSave(input, index >= 0 ? rows[index] : {});
+  if(index >= 0) rows[index] = saved; else rows.push(saved);
+  raw[SHEET_MAP.speedOptions] = rows;
+  updateWorkingCopy(raw, index >= 0 ? "speed-save" : "speed-create", {sheet:SHEET_MAP.speedOptions, key:speedOptionKey(saved)});
+  return saved;
+}
+function duplicateSpeedOption(key){
+  const source = DB.speedOptions.find(row => speedOptionKey(row) === key);
+  if(!source) throw new Error("Speed option not found.");
+  const option = nextSpeedOptionForPersona(source.PersonaID);
+  const copy = {...source, SpeedOption:option, ReferenceID:`${source.PersonaID}-${option}`, SortOrder:DB.speedOptions.filter(row => row.PersonaID === source.PersonaID).length + 1, Active:"FALSE"};
+  return saveSpeedOptionDraft({...copy, DisplayOrder:speedDisplayOrder(copy)}, "");
+}
+function setSpeedOptionActive(key, active){
+  const row = DB.speedOptions.find(item => speedOptionKey(item) === key);
+  if(!row) throw new Error("Speed option not found.");
+  return saveSpeedOptionDraft({...row, DisplayOrder:speedDisplayOrder(row), Active:active ? "TRUE" : "FALSE"}, key);
+}
+function removeSpeedOption(key){
+  if(!EditingSession.isEditing) startEditingSession();
+  const raw = activeDatabaseSnapshot();
+  raw[SHEET_MAP.speedOptions] = (raw[SHEET_MAP.speedOptions] || []).filter(row => speedOptionKey(row) !== key);
+  updateWorkingCopy(raw, "speed-remove", {sheet:SHEET_MAP.speedOptions, key});
+}
+function moveSpeedOption(key, direction){
+  const row = DB.speedOptions.find(item => speedOptionKey(item) === key);
+  if(!row) throw new Error("Speed option not found.");
+  const siblings = DB.speedOptions.filter(item => item.PersonaID === row.PersonaID).sort((a,b)=>Number(speedDisplayOrder(a)||0)-Number(speedDisplayOrder(b)||0));
+  const index = siblings.findIndex(item => speedOptionKey(item) === key);
+  const swap = siblings[index + direction];
+  if(!swap) return row;
+  saveSpeedOptionDraft({...row, DisplayOrder:speedDisplayOrder(swap)}, key);
+  return saveSpeedOptionDraft({...swap, DisplayOrder:speedDisplayOrder(row)}, speedOptionKey(swap));
+}
 function personaRelationships(personaID){
   const id = String(personaID || "").trim();
   return {

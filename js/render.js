@@ -52,12 +52,13 @@ function renderAll(){
   renderPublishPanel();
   renderEditingStatus();
   renderPersonaEditor();
+  renderSpeedOptionEditor();
   fillExportPicker();
   renderExportCartTray();
   document.getElementById("dbStatus").textContent = "Database loaded";
   document.getElementById("dbStatus").className = "pill gray";
   const download = document.getElementById("downloadUpdatedJson");
-  if(download) download.disabled = !DB.loadedFromWorkbook;
+  if(download) download.disabled = !(DB.loadedFromWorkbook || EditingSession.isEditing);
 }
 function renderEditingStatus(){
   const status = document.getElementById("editingStatus");
@@ -122,6 +123,7 @@ function renderPersonaEditorForm(persona, errors={}){
     el("span",{},[`Speeds: ${counts.speeds}`]), el("span",{},[`Modifiers: ${counts.modifiers}`]), el("span",{},[`Disclaimer links: ${counts.disclaimers}`])
   ]));
   PERSONA_EDITOR_FIELDS.forEach(field => form.appendChild(editorField(field, persona[field], errors)));
+  renderSpeedOptionEditor();
 }
 function personaEditorDraft(){
   const form = document.getElementById("personaEditorForm");
@@ -166,6 +168,123 @@ function deleteSelectedPersonaEditor(){
   if(!editorSelectedPersonaID) return;
   if(!window.confirm("Mark this persona as Deleted in the working copy? It will not be permanently removed.")) return;
   markPersonaDeleted(editorSelectedPersonaID, "Browser Persona Editor");
+  runDatabaseHealth();
+  renderAll();
+}
+
+let editorSelectedSpeedKey = "";
+function selectedPersonaSpeedRows(){
+  return DB.speedOptions
+    .filter(row => row.PersonaID === editorSelectedPersonaID)
+    .sort((a,b)=>Number(speedDisplayOrder(a)||0)-Number(speedDisplayOrder(b)||0));
+}
+function speedOptionStateClass(speed){
+  const state = editingSessionState().recordStates?.[sheetRecordKey(SHEET_MAP.speedOptions, speed, 0)] || "";
+  return `${truthy(speed.Active) ? "" : " inactive"}${state ? ` ${state}` : ""}`;
+}
+function renderSpeedOptionEditor(){
+  const list = document.getElementById("speedOptionEditorList");
+  const form = document.getElementById("speedOptionEditorForm");
+  const count = document.getElementById("speedOptionEditorCount");
+  if(!list || !form) return;
+  const rows = selectedPersonaSpeedRows();
+  if(!rows.some(row => speedOptionKey(row) === editorSelectedSpeedKey)) editorSelectedSpeedKey = rows[0] ? speedOptionKey(rows[0]) : "";
+  if(count) count.textContent = `${rows.length} speed option${rows.length===1?"":"s"}`;
+  list.innerHTML = "";
+  if(!editorSelectedPersonaID){
+    list.appendChild(emptyState("Select a persona first."));
+  }else{
+    rows.forEach(speed => {
+      const resolution = scheduleResolutionForSpeed(speed);
+      list.appendChild(el("button",{class:`persona-editor-row speed-option-row${speedOptionKey(speed)===editorSelectedSpeedKey?" active":""}${speedOptionStateClass(speed)}`, type:"button", onclick:()=>{editorSelectedSpeedKey=speedOptionKey(speed); renderSpeedOptionEditor();}},[
+        el("strong",{},[`${speed.SpeedOption || "No option"} • ${speed.DisplaySpeed || "No speed"}`]),
+        el("span",{},[`${speed.ReferenceID || "No ReferenceID"} • ${truthy(speed.Active) ? "Active" : "Inactive"} • ${resolution.resolves ? "Pricing resolved" : "Pricing missing"}`])
+      ]));
+    });
+  }
+  renderSpeedOptionEditorForm(DB.speedOptions.find(row => speedOptionKey(row) === editorSelectedSpeedKey) || null);
+}
+function speedOptionField(name, value, errors={}){
+  const required = SPEED_OPTION_REQUIRED_FIELDS.includes(name);
+  const id = `speedEdit-${name}`;
+  const input = name === "Active" ? el("select",{id, name},[["TRUE","True"],["FALSE","False"]].map(([v,l])=>el("option",{value:v, selected:String(value).toUpperCase()===v},[l]))) :
+    name === "PricingType" ? el("select",{id, name},[...new Set(["Step Pricing","Flat Pricing","3 Months Free","3 Year Price Lock", ...DB.speedOptions.map(row => row.PricingType).filter(Boolean)])].map(v=>el("option",{value:v, selected:String(value)===String(v)},[v]))) :
+    el("input",{id, name, value:value ?? ""});
+  return el("label",{class:`editor-field ${errors[name]?"invalid":""}`},[
+    el("span",{},[name, required ? el("b",{title:"Required"},[" *"]) : null]), input,
+    errors[name] ? el("em",{},[errors[name]]) : null
+  ]);
+}
+function renderSpeedOptionEditorForm(speed, errors={}){
+  const form = document.getElementById("speedOptionEditorForm");
+  form.innerHTML = "";
+  if(!editorSelectedPersonaID){ form.appendChild(emptyState("Select a persona to edit its speed options.")); return; }
+  if(!speed){ form.appendChild(emptyState("Create or select a speed option.")); return; }
+  const draft = {...speed, DisplayOrder:speedDisplayOrder(speed)};
+  const resolution = scheduleResolutionForSpeed(draft);
+  const persona = DB.personas.find(row => row.PersonaID === draft.PersonaID);
+  form.dataset.originalSpeedKey = speedOptionKey(speed);
+  form.dataset.originalScheduleId = speed.ScheduleID || "";
+  form.appendChild(el("div",{class:"editor-related-counts"},[
+    el("span",{class:resolution.resolves ? "" : "bad"},[`Schedule: ${resolution.resolves ? `${resolution.count} pricing rows` : "unresolved"}`]),
+    el("span",{},[`Pricing: ${resolution.summary}`]),
+    el("span",{},[`Symmetrical speeds: ${truthy(persona?.SymSpeed) ? "visible / enabled" : "hidden unless upload differs"}`])
+  ]));
+  SPEED_OPTION_FIELDS.forEach(field => form.appendChild(speedOptionField(field, draft[field], errors)));
+}
+function speedOptionEditorDraft(){
+  const form = document.getElementById("speedOptionEditorForm");
+  const draft = {};
+  SPEED_OPTION_FIELDS.forEach(field => { draft[field] = form.elements[field]?.value ?? ""; });
+  return draft;
+}
+function saveSpeedOptionEditor(){
+  const form = document.getElementById("speedOptionEditorForm");
+  const original = form.dataset.originalSpeedKey || "";
+  const originalScheduleID = form.dataset.originalScheduleId || "";
+  const draft = speedOptionEditorDraft();
+  const beforeResolution = original ? scheduleResolutionForSpeed(DB.speedOptions.find(row => speedOptionKey(row) === original) || {}) : {resolves:false};
+  const afterResolution = scheduleResolutionForSpeed(draft);
+  if(originalScheduleID && draft.ScheduleID !== originalScheduleID && beforeResolution.resolves && !afterResolution.resolves && !window.confirm("Changing ScheduleID breaks the attached pricing relationship. Save anyway?")) return;
+  const validation = validateSpeedOptionDraft(draft, original);
+  if(!validation.valid){ renderSpeedOptionEditorForm({...draft}, validation.errors); return; }
+  const saved = saveSpeedOptionDraft(draft, original);
+  runDatabaseHealth();
+  editorSelectedSpeedKey = speedOptionKey(saved);
+  renderAll();
+}
+function createSpeedOptionEditor(){
+  if(!editorSelectedPersonaID) return;
+  startEditingSession();
+  const option = nextSpeedOptionForPersona(editorSelectedPersonaID);
+  const persona = DB.personas.find(row => row.PersonaID === editorSelectedPersonaID);
+  editorSelectedSpeedKey = "";
+  renderSpeedOptionEditorForm({PersonaID:editorSelectedPersonaID, SpeedOption:option, ReferenceID:`${editorSelectedPersonaID}-${option}`, DisplayOrder:selectedPersonaSpeedRows().length + 1, Active:"TRUE", PricingType:displayPricingSet(persona?.PricingSet || "Standard")});
+}
+function duplicateSelectedSpeedOptionEditor(){
+  if(!editorSelectedSpeedKey) return;
+  const saved = duplicateSpeedOption(editorSelectedSpeedKey);
+  runDatabaseHealth();
+  editorSelectedSpeedKey = speedOptionKey(saved);
+  renderAll();
+}
+function activeSelectedSpeedOptionEditor(active){
+  if(!editorSelectedSpeedKey) return;
+  setSpeedOptionActive(editorSelectedSpeedKey, active);
+  runDatabaseHealth();
+  renderAll();
+}
+function removeSelectedSpeedOptionEditor(){
+  if(!editorSelectedSpeedKey) return;
+  if(!window.confirm("Remove this speed option from the working copy? Pricing rows are not deleted.")) return;
+  removeSpeedOption(editorSelectedSpeedKey);
+  runDatabaseHealth();
+  editorSelectedSpeedKey = "";
+  renderAll();
+}
+function moveSelectedSpeedOptionEditor(direction){
+  if(!editorSelectedSpeedKey) return;
+  moveSpeedOption(editorSelectedSpeedKey, direction);
   runDatabaseHealth();
   renderAll();
 }
