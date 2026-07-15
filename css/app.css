@@ -259,3 +259,11 @@ pre{background:var(--neutral-row);border:1px solid var(--line);border-radius:10p
 @media print{.export-cart-tray,.export-cart-list,#exportCartEmpty,#exportCartCount,#selectedCount{display:none!important}}
 body.has-export-cart-tray .content{padding-bottom:110px}
 @media(max-width:900px){body.has-export-cart-tray .content{padding-bottom:170px}}
+.pill.ok{background:var(--green);color:var(--greenText);border-color:#b7e3c8}
+.pill.warn{background:var(--yellow);color:var(--yellowText);border-color:#f4d879}
+.manage-card-wide{max-width:none;margin:0;padding:24px;background:var(--pv-white)}
+.manage-actions{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}
+.manage-workspace-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:18px}
+.manage-section{border:1px solid var(--line);border-radius:14px;background:var(--neutral-soft);padding:16px;min-height:130px}
+.manage-section h3{margin:0 0 8px;color:var(--pv-charcoal)}
+#manage .eyebrow{margin:0 0 4px;color:var(--pv-purple);font-weight:900;text-transform:uppercase;letter-spacing:.08em;font-size:12px}

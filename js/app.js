@@ -15,6 +15,14 @@ function runExportAction(action){
   action();
 }
 
+function warnIfUnsavedChanges(message){
+  if(typeof editingHasUnsavedChanges !== "function" || !editingHasUnsavedChanges()) return true;
+  return window.confirm(message || "You have unsaved working-copy changes. Continue and lose those changes?");
+}
+function refreshEditingStatus(){
+  if(typeof renderEditingStatus === "function") renderEditingStatus();
+}
+
 function setView(name, options = {}){
   document.querySelectorAll(".nav").forEach(n=>{
     const active = n.dataset.view===name;
@@ -96,6 +104,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   document.getElementById("workbookUpload").addEventListener("change", async (e)=>{
     const file = e.target.files[0];
+    if(file && !warnIfUnsavedChanges("Loading another workbook will discard unsaved working-copy changes. Continue?")){
+      e.target.value = "";
+      return;
+    }
     if(!file) return;
     try{
       await loadWorkbookFile(file);
@@ -110,6 +122,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   document.getElementById("downloadUpdatedJson").addEventListener("click", downloadUpdatedJson);
   document.getElementById("loadBundled").addEventListener("click", async ()=>{
+    if(!warnIfUnsavedChanges("Loading the published database will discard unsaved working-copy changes. Continue?")) return;
     try{
       await loadBundledDatabase();
       renderAll();
@@ -131,6 +144,25 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("downloadSummary").addEventListener("click", () => runExportAction(downloadSelectedSummary));
   document.getElementById("copySummary").addEventListener("click", () => runExportAction(copySelectedSummary));
   window.addEventListener("beforeprint", fitPrintCardsToLetter);
+  document.getElementById("startEditing")?.addEventListener("click", () => {
+    startEditingSession();
+    renderAll();
+    setView("manage");
+  });
+  document.getElementById("discardWorkingCopy")?.addEventListener("click", () => {
+    if(!window.confirm("Discard the current working copy and return to the last saved/downloaded snapshot?")) return;
+    discardWorkingChanges();
+    renderAll();
+  });
+  document.getElementById("resetWorkingCopy")?.addEventListener("click", () => {
+    resetWorkingCopyFromPublished();
+    renderAll();
+  });
+  window.addEventListener("beforeunload", event => {
+    if(!editingHasUnsavedChanges()) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
   window.addEventListener("afterprint", () => {
     resetPrintScaling();
     removeDedicatedPrintDocument();
@@ -163,7 +195,8 @@ function downloadUpdatedJson(){
     URL.revokeObjectURL(url);
     const instructions = document.getElementById("downloadInstructions");
     if(instructions) instructions.hidden = false;
-    renderPublishPanel();
+    if(typeof markWorkingCopyDownloaded === "function") markWorkingCopyDownloaded();
+    renderAll();
   }catch(err){
     alert(err.message);
   }
