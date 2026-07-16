@@ -25,6 +25,7 @@ const copy = context.duplicateDisclaimer(originalDisclaimer.DisclaimerID);
 assert.notStrictEqual(copy.DisclaimerID, originalDisclaimer.DisclaimerID, 'disclaimer can be duplicated');
 assert.strictEqual(copy.DisclaimerText, originalDisclaimer.DisclaimerText, 'duplicating preserves legal copy exactly');
 assert(context.personasUsingDisclaimer(originalDisclaimer.DisclaimerID).length > 0, 'linked personas can be inspected for disclaimers');
+assert(Array.isArray(context.missingDisclaimerRelationships()), 'missing disclaimer relationships can be validated');
 context.saveDisclaimerDraft({...copy, DisclaimerText:copy.DisclaimerText + ' Test suffix.'}, copy.DisclaimerID);
 assert(context.databaseState().disclaimers.find(row => row.DisclaimerID === copy.DisclaimerID).DisclaimerText.endsWith(' Test suffix.'), 'full disclaimer text can be edited without rewriting');
 

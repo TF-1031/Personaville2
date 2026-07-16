@@ -1385,6 +1385,12 @@ function modifierRelationships(modifierID){
   return DB.personaModifiers.filter(row => row.ModifierID === modifierID).map(row => ({...row, persona:DB.personas.find(p => p.PersonaID === row.PersonaID) || {}})).sort((a,b)=>Number(a.DisplayOrder||0)-Number(b.DisplayOrder||0));
 }
 function personasUsingDisclaimer(disclaimerID){ return DB.personas.filter(p => p.DisclaimerID === disclaimerID).sort((a,b)=>String(a.PersonaName||a.PersonaID).localeCompare(String(b.PersonaName||b.PersonaID))); }
+function missingDisclaimerRelationships(){
+  const disclaimerIDs = new Set(DB.disclaimers.map(row => row.DisclaimerID).filter(Boolean));
+  return DB.personas
+    .filter(persona => !persona.DisclaimerID || !disclaimerIDs.has(persona.DisclaimerID))
+    .sort((a,b)=>String(a.PersonaName||a.PersonaID).localeCompare(String(b.PersonaName||b.PersonaID)));
+}
 function nextSafeModifierID(){ const nums=DB.modifiers.map(r=>String(r.ModifierID||"").match(/^MOD_(\d+)$/i)?.[1]).filter(Boolean).map(Number); let n=(nums.length?Math.max(...nums):0)+1; let id; do{id=`MOD_${String(n++).padStart(3,"0")}`;}while(DB.modifiers.some(r=>r.ModifierID===id)); return id; }
 function nextSafeDisclaimerID(){ const nums=DB.disclaimers.map(r=>String(r.DisclaimerID||"").match(/^DISC_(\d+)$/i)?.[1]).filter(Boolean).map(Number); let n=(nums.length?Math.max(...nums):0)+1; let id; do{id=`DISC_${String(n++).padStart(3,"0")}`;}while(DB.disclaimers.some(r=>r.DisclaimerID===id)); return id; }
 function normalizeModifierForSave(input, existing={}){ const row={...existing}; MODIFIER_EDITOR_FIELDS.forEach(f=>row[f]=input[f]??""); row.Active=truthy(row.Active)?"TRUE":"FALSE"; return row; }
