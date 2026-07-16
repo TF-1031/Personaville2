@@ -1463,6 +1463,19 @@ function renderChangeReview(){
   const countPill = document.getElementById("reviewChangeCount");
   const filter = document.getElementById("changeTypeFilter");
   if(!list || !summary || !countPill) return;
+  const session = editingSessionState();
+  if(session.initState !== "ready"){
+    countPill.textContent = "Loading…";
+    summary.innerHTML = "";
+    list.innerHTML = "";
+    list.appendChild(emptyState(`Change Review is waiting for startup to finish (${session.initState || "loading"}).`));
+    return;
+  }
+  if(session.notice){
+    const notice = el("div",{class:"notice warn"},[session.notice]);
+    summary.innerHTML = "";
+    summary.appendChild(notice);
+  }
   const changes = editingChangeList();
   const types = [...new Set(changes.map(c => c.recordType))].sort();
   if(filter){
@@ -1475,7 +1488,7 @@ function renderChangeReview(){
   countPill.textContent = `${changes.length} change${changes.length === 1 ? "" : "s"}`;
   countPill.setAttribute("aria-label", `${changes.length} uncommitted change${changes.length === 1 ? "" : "s"}`);
   const review = editingChangeSummary();
-  summary.innerHTML = "";
+  if(!session.notice) summary.innerHTML = "";
   [
     ["Personas changed", review.personas],
     ["Speed options changed", review.speedOptions],
