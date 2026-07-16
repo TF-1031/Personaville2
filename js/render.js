@@ -369,6 +369,11 @@ function renderPersonaEditorForm(persona, errors={}){
   if(editorSelectedPersonaID){
     form.appendChild(el("div",{class:"editor-mode-banner"},[readonlyForm ? "Read-only active record. Create an updated version before changing published content." : "Editable draft or explicitly unlocked record."]));
   }
+  form.appendChild(el("div",{class:"lifecycle-summary", role:"status", "aria-live":"polite"},[
+    el("strong",{},["Derived lifecycle status: "]),
+    el("span",{class:"lifecycle-badge"},[typeof personaLifecycleStatus === "function" ? personaLifecycleStatus(persona) : (persona.Status || "No status")]),
+    el("small",{class:"editor-help"},[" Calculated from browser-local Effective Start/End dates and Lifecycle Override. It is not directly editable."])
+  ]));
   PERSONA_EDITOR_SECTIONS.forEach(section => {
     const content = [];
     section.fields.forEach(field => {
@@ -428,6 +433,10 @@ function savePersonaEditor(){
   if(original && draft.PersonaID !== original && personaHasRelationships(original) && !window.confirm("This PersonaID has speed, modifier, or disclaimer relationships. Change it anyway?")) return;
   const validation = validatePersonaDraft(draft, original);
   if(!validation.valid){ renderPersonaEditorForm(draft, validation.errors); return; }
+  const prospectiveRows = DB.personas.map(row => row.PersonaID === original ? draft : row);
+  if(!original) prospectiveRows.push(draft);
+  const lifecycleConflicts = validatePersonaLifecycleRecords(prospectiveRows).filter(record => String(record.Record || "").includes(draft.PersonaID));
+  if(lifecycleConflicts.length && !window.confirm(`Lifecycle conflicts were found before save:\n\n${lifecycleConflicts.map(record => `- ${record.Reason}`).join("\n")}\n\nSave anyway?`)) return;
   const saved = savePersonaDraft(draft, original, "Browser Persona Editor");
   runDatabaseHealth();
   editorSelectedPersonaID = saved.PersonaID;
