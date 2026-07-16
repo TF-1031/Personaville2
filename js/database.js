@@ -73,7 +73,7 @@ function editingHasUnsavedChanges(){
   return EditingSession.isEditing && !rawPayloadEquals(EditingSession.workingRaw, EditingSession.lastSavedSnapshotRaw);
 }
 function editingStatusText(){
-  return editingHasUnsavedChanges() ? "Unsaved changes" : "No unsaved changes";
+  return editingHasUnsavedChanges() ? "Unsaved Changes" : "Saved";
 }
 function refreshEditingRecordStates(){
   EditingSession.recordStates = snapshotRecordStates(EditingSession.baselineSnapshotRaw, EditingSession.workingRaw);
