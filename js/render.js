@@ -106,16 +106,122 @@ function renderPersonaEditor(){
   document.getElementById("personaEditorCount").textContent = `${rows.length} persona${rows.length===1?"":"s"}`;
   renderPersonaEditorForm(DB.personas.find(p => p.PersonaID === editorSelectedPersonaID) || null);
 }
-function editorField(name, value, errors={}){
-  const required = PERSONA_REQUIRED_FIELDS.includes(name);
+const PERSONA_FIELD_LABELS = {
+  PersonaID: "Persona ID",
+  PersonaName: "Persona Name",
+  FamilyGroup: "Family Group",
+  FamilyGroupID: "Family Group ID",
+  PricingSet: "Pricing Set",
+  PricingSetID: "Pricing Set ID",
+  PromoIcon: "Promotion Icon",
+  EquipInc: "Equipment Included",
+  SymSpeed: "Symmetrical Speed",
+  DisclaimerID: "Disclaimer",
+  ModifiedBy: "Modified By",
+  ModifiedDate: "Modified Date"
+};
+const PERSONA_FIELD_HELP = {
+  FamilyGroup: "Choose the product family this persona belongs to.",
+  PricingSet: "Choose the offer or promotion pricing group for this persona.",
+  PromoIcon: "Optional image filename used as the promotional badge for this persona.",
+  DisclaimerID: "Choose the legal disclaimer that should appear with this persona."
+};
+const PERSONA_EDITOR_SECTIONS = [
+  {title:"General", fields:["Status", "PersonaName", "FamilyGroup", "PricingSet"]},
+  {title:"Features", fields:["EquipInc", "SymSpeed", "PromoIcon"]},
+  {title:"Legal", fields:["DisclaimerID"]},
+  {title:"Notes", fields:["Notes"]},
+  {title:"System Information", fields:["PersonaID", "FamilyGroupID", "PricingSetID", "ModifiedBy", "ModifiedDate"]}
+];
+function personaFieldLabel(name){
+  return PERSONA_FIELD_LABELS[name] || name;
+}
+function sheetRows(sheetName){
+  return Array.isArray(DB.raw?.[sheetName]) ? DB.raw[sheetName] : [];
+}
+function currentFamilyGroups(){
+  const rows = sheetRows("02_FamilyGroups");
+  const mapped = rows.map(row => ({label:row.FamilyGroup || "", id:row.FamilyGroupID || ""})).filter(row => row.label || row.id);
+  return mapped.length ? mapped : getUnique(DB.personas, "FamilyGroup").map(label => ({label, id:DB.personas.find(p => p.FamilyGroup === label)?.FamilyGroupID || ""}));
+}
+function currentPricingSets(){
+  const rows = sheetRows("03_PricingSets");
+  const mapped = rows.map(row => ({label:row.PricingSet || "", id:row.PricingSetID || ""})).filter(row => row.label || row.id);
+  return mapped.length ? mapped : getUnique(DB.personas, "PricingSet").map(label => ({label, id:DB.personas.find(p => p.PricingSet === label)?.PricingSetID || ""}));
+}
+function formatPersonaDateTime(value){
+  if(value === null || value === undefined || value === "") return "";
+  let date = null;
+  if(typeof value === "number"){
+    date = new Date(Math.round((value - 25569) * 86400 * 1000));
+  }else{
+    const parsed = new Date(value);
+    if(!Number.isNaN(parsed.getTime())) date = parsed;
+  }
+  return date ? date.toLocaleString(undefined, {dateStyle:"medium", timeStyle:"short"}) : String(value);
+}
+function personaChoiceField(name, value, errors={}){
   const id = `personaEdit-${name}`;
-  const input = ["Notes"].includes(name) ? el("textarea",{id, name, rows:"3"},[value || ""]) :
-    ["EquipInc","SymSpeed"].includes(name) ? el("select",{id, name},[["TRUE","True"],["FALSE","False"]].map(([v,l])=>el("option",{value:v, selected:String(value).toUpperCase()===v},[l]))) :
-    el("input",{id, name, value:value ?? ""});
+  const isFamily = name === "FamilyGroup";
+  const baseChoices = isFamily ? currentFamilyGroups() : currentPricingSets();
+  const choices = value && !baseChoices.some(choice => choice.label === value) ? [{label:value, id:""}, ...baseChoices] : baseChoices;
+  const idField = isFamily ? "FamilyGroupID" : "PricingSetID";
+  const select = el("select",{
+    id,
+    name,
+    onchange:event=>{
+      const selected = choices.find(choice => choice.label === event.currentTarget.value) || {};
+      const idInput = document.getElementById(`personaEdit-${idField}`);
+      if(idInput) idInput.value = selected.id || "";
+      updatePersonaEditorSaveState("Unsaved Changes");
+    }
+  },[
+    el("option",{value:""},["Choose…"]),
+    ...choices.map(choice => el("option",{"value":choice.label, "data-related-id":choice.id, selected:choice.label === value},[choice.label || choice.id]))
+  ]);
+  return personaFieldWrapper(name, select, errors);
+}
+function personaFieldWrapper(name, input, errors={}){
+  const required = PERSONA_REQUIRED_FIELDS.includes(name);
+  const help = PERSONA_FIELD_HELP[name];
+  const label = personaFieldLabel(name);
+  if(help) input.setAttribute("aria-describedby", `personaHelp-${name}`);
   return el("label",{class:`editor-field ${errors[name]?"invalid":""}`},[
-    el("span",{},[name, required ? el("b",{title:"Required"},[" *"]) : null]), input,
+    el("span",{},[label, required ? el("b",{title:"Required"},[" *"]) : null]), input,
+    help ? el("small",{id:`personaHelp-${name}`, class:"editor-help", title:help},[help]) : null,
     errors[name] ? el("em",{},[errors[name]]) : null
   ]);
+}
+function editorField(name, value, errors={}){
+  const id = `personaEdit-${name}`;
+  if(name === "FamilyGroup" || name === "PricingSet") return personaChoiceField(name, value, errors);
+  if(name === "DisclaimerID"){
+    const input = el("select",{id, name},[
+      el("option",{value:""},["Choose…"]),
+      ...DB.disclaimers.map(d => el("option",{value:d.DisclaimerID, selected:d.DisclaimerID === value},[d.Title ? `${d.Title} (${d.DisclaimerID})` : d.DisclaimerID]))
+    ]);
+    return personaFieldWrapper(name, input, errors);
+  }
+  let readonly = ["FamilyGroupID", "PricingSetID", "ModifiedBy"].includes(name);
+  if(name === "PersonaID") readonly = Boolean(document.getElementById("personaEditorForm")?.dataset.originalPersonaId);
+  if(name === "ModifiedDate"){
+    return personaFieldWrapper(name, el("span",{class:"readonly-field"},[
+      el("input",{type:"hidden", name, value:value ?? ""}),
+      formatPersonaDateTime(value) || "Not saved yet"
+    ]), errors);
+  }
+  const input = ["Notes"].includes(name) ? el("textarea",{id, name, rows:"3"},[value || ""]) :
+    ["EquipInc","SymSpeed"].includes(name) ? el("input",{id, name, type:"checkbox", value:"TRUE", checked:truthy(value)}) :
+    el("input",{id, name, value:value ?? "", readonly});
+  return personaFieldWrapper(name, input, errors);
+}
+function updatePersonaEditorSaveState(text){
+  const indicator = document.getElementById("personaEditorSaveState");
+  if(indicator){
+    const label = text || (editingHasUnsavedChanges() ? "Unsaved Changes" : "Saved");
+    indicator.textContent = label;
+    indicator.className = `pill ${label === "Unsaved Changes" ? "warn" : "ok"}`;
+  }
 }
 function renderPersonaEditorForm(persona, errors={}){
   const form = document.getElementById("personaEditorForm");
@@ -126,14 +232,26 @@ function renderPersonaEditorForm(persona, errors={}){
   form.appendChild(el("div",{class:"editor-related-counts"},[
     el("span",{},[`Speeds: ${counts.speeds}`]), el("span",{},[`Modifiers: ${counts.modifiers}`]), el("span",{},[`Disclaimer links: ${counts.disclaimers}`])
   ]));
-  PERSONA_EDITOR_FIELDS.forEach(field => form.appendChild(editorField(field, persona[field], errors)));
+  PERSONA_EDITOR_SECTIONS.forEach(section => {
+    const sectionNode = el("fieldset",{class:"persona-editor-section"},[
+      el("legend",{},[section.title])
+    ]);
+    section.fields.forEach(field => sectionNode.appendChild(editorField(field, persona[field], errors)));
+    form.appendChild(sectionNode);
+  });
+  form.addEventListener("input", () => updatePersonaEditorSaveState("Unsaved Changes"), {once:true});
+  form.addEventListener("change", () => updatePersonaEditorSaveState("Unsaved Changes"), {once:true});
+  updatePersonaEditorSaveState();
   renderSpeedOptionEditor();
   renderPersonaModifierEditor();
 }
 function personaEditorDraft(){
   const form = document.getElementById("personaEditorForm");
   const draft = {};
-  PERSONA_EDITOR_FIELDS.forEach(field => { draft[field] = form.elements[field]?.value ?? ""; });
+  PERSONA_EDITOR_FIELDS.forEach(field => {
+    const control = form.elements[field];
+    draft[field] = control?.type === "checkbox" ? (control.checked ? "TRUE" : "FALSE") : (control?.value ?? "");
+  });
   return draft;
 }
 function savePersonaEditor(){
