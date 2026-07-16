@@ -57,6 +57,7 @@ function renderAll(){
   renderModifierEditor();
   renderPersonaModifierEditor();
   renderDisclaimerEditor();
+  if(typeof renderAssetManager === "function") renderAssetManager();
   fillExportPicker();
   renderExportCartTray();
   document.getElementById("dbStatus").textContent = "Database loaded";
