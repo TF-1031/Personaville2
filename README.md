@@ -198,3 +198,11 @@ database/persona-db.json --fetch on load--------> same runtime DB state
 | Hero image is missing | `assets/images/personaville-header.png` path changed or file missing | Restore the file or update `components/header.html`. |
 | Audio does not play | Browser autoplay policy or missing MP3 | Press **Play** after user interaction and confirm `audio/8bit-Personaville-loop.mp3` exists. |
 | Updated workbook changes are not reflected | JSON was not regenerated/replaced | Use **Admin → Publish Database → Download Updated JSON** and replace `database/persona-db.json`. |
+
+## Date-based persona lifecycle scheduling
+
+Personas may include `EffectiveStartDate`, `EffectiveEndDate`, `SupersedesPersonaID`, and `LifecycleStatusOverride` in `05_Personas`. Dates are browser-local calendar dates stored as `YYYY-MM-DD`; there are no times, cron jobs, server schedulers, GitHub automations, or timezone selectors. Blank end dates mean the persona remains effective indefinitely until ended, manually deactivated, or superseded.
+
+Legacy active records with no lifecycle dates remain active, and older JSON/workbooks continue to load without inventing dates. Workbook exports and publishing packages include lifecycle columns when present in the persona rows. The browser evaluates lifecycle status when the static site is loaded: records must already be published in `database/persona-db.json`, and users may need to refresh after midnight to see date changes.
+
+Use **Create Updated Version** to replace an existing persona. The editor duplicates the source as a new draft, generates a new `PersonaID`, sets `SupersedesPersonaID`, asks for the replacement start date, previews the new draft plus the suggested source end date (one day earlier), and requires confirmation before changing the source.

@@ -89,7 +89,7 @@ function renderEditingStatus(){
 
 let editorSelectedPersonaID = "";
 let personaEditorMode = "start"; // start, view, create-from-existing, edit-anyway
-function isExistingActivePersona(persona){ return String(persona?.Status || "").toLowerCase() === "active"; }
+function isExistingActivePersona(persona){ return typeof isPersonaCurrentlyActive === "function" ? isPersonaCurrentlyActive(persona) : String(persona?.Status || "").toLowerCase() === "active"; }
 function personaEditorReadOnly(persona){ return Boolean(persona && persona.PersonaID && isExistingActivePersona(persona) && personaEditorMode !== "edit-anyway"); }
 function personaEditorRows(){
   const q = (document.getElementById("personaEditorSearch")?.value || "").toLowerCase().trim();
@@ -109,7 +109,7 @@ function renderPersonaEditor(){
   rows.forEach(p => list.appendChild(el("button",{class:`persona-editor-row${p.PersonaID===editorSelectedPersonaID?" active":""}${personaEditorStateClass(p)}`, type:"button", "aria-pressed":String(p.PersonaID===editorSelectedPersonaID), onclick:()=>{editorSelectedPersonaID=p.PersonaID; personaEditorMode = personaEditorMode === "create-from-existing" ? "create-from-existing" : "view"; renderPersonaEditor();}},[
     p.PersonaID===editorSelectedPersonaID ? el("span",{class:"selected-marker", "aria-hidden":"true"},["✓ Selected"]) : null,
     el("strong",{},[p.PersonaName || "Untitled"]),
-    el("span",{},[`${p.PersonaID || "No ID"} • ${p.Status || "No status"}`])
+    el("span",{},[`${p.PersonaID || "No ID"} • ${typeof personaLifecycleStatus === "function" ? personaLifecycleStatus(p) : (p.Status || "No status")}`])
   ])));
   document.getElementById("personaEditorCount").textContent = `${rows.length} persona${rows.length===1?"":"s"}`;
   updatePersonaEditorActionState();
@@ -150,16 +150,25 @@ const PERSONA_FIELD_LABELS = {
   Fiber: "Fiber",
   DisclaimerID: "Disclaimer",
   ModifiedBy: "Modified By",
-  ModifiedDate: "Modified Date"
+  ModifiedDate: "Modified Date",
+  EffectiveStartDate: "Effective Start Date",
+  EffectiveEndDate: "Effective End Date",
+  SupersedesPersonaID: "Supersedes PersonaID",
+  LifecycleStatusOverride: "Lifecycle Override"
 };
 const PERSONA_FIELD_HELP = {
   FamilyGroup: "Choose the product family this persona belongs to.",
   PricingSet: "Choose the offer or promotion pricing group for this persona.",
   PromoIcon: "Optional image filename used as the promotional badge for this persona.",
-  DisclaimerID: "Choose the legal disclaimer that should appear with this persona."
+  DisclaimerID: "Choose the legal disclaimer that should appear with this persona.",
+  EffectiveStartDate: "Browser-local calendar date only, formatted YYYY-MM-DD. Blank means active immediately for legacy active records.",
+  EffectiveEndDate: "YYYY-MM-DD. Blank means effective indefinitely until ended, deactivated, or superseded.",
+  SupersedesPersonaID: "Set by Create Updated Version to link replacement records.",
+  LifecycleStatusOverride: "Use Inactive only for manual deactivation."
 };
 const PERSONA_EDITOR_SECTIONS = [
   {title:"General", fields:["Status", "PersonaName", "FamilyGroup", "PricingSet"]},
+  {title:"Lifecycle", fields:["EffectiveStartDate", "EffectiveEndDate", "SupersedesPersonaID", "LifecycleStatusOverride"]},
   {title:"Features", fields:["EquipInc", "SymSpeed", "Fiber", "PromoIcon"]},
   {title:"Legal", fields:["DisclaimerID"]},
   {title:"Notes", fields:["Notes"]},
@@ -226,6 +235,8 @@ function personaFieldWrapper(name, input, errors={}){
 }
 function editorField(name, value, errors={}, readonlyForm=false){
   const id = `personaEdit-${name}`;
+  if(["EffectiveStartDate", "EffectiveEndDate"].includes(name)) return personaFieldWrapper(name, el("input",{id, name, type:"date", value:value ?? "", readonly:readonlyForm}), errors);
+  if(name === "LifecycleStatusOverride") return personaFieldWrapper(name, el("select",{id, name, disabled:readonlyForm},[el("option",{value:"", selected:!value},["None"]), el("option",{value:"Inactive", selected:value === "Inactive"},["Inactive"])]), errors);
   if(name === "FamilyGroup" || name === "PricingSet") return personaChoiceField(name, value, errors);
   if(name === "PromoIcon") return personaFieldWrapper(name, el("div",{id:"promotionIconPicker", class:"promotion-icon-picker"},[]), errors);
   if(name === "DisclaimerID"){
@@ -409,7 +420,18 @@ function duplicateSelectedPersonaEditor(){
   personaEditorMode = "edit-anyway";
   renderAll();
 }
-function createUpdatedVersionPersonaEditor(){ duplicateSelectedPersonaEditor(); }
+function createUpdatedVersionPersonaEditor(){
+  if(!editorSelectedPersonaID) return;
+  const startDate = window.prompt("Replacement start date (YYYY-MM-DD). The source end date will be suggested as one day earlier.", currentPersonaDate());
+  if(!startDate) return;
+  try{
+    const preview = createUpdatedPersonaVersion(editorSelectedPersonaID, startDate, false, "Browser Persona Editor");
+    const message = [`Create updated version?`, ``, `Source ${preview.sourceBefore.PersonaID}: EffectiveEndDate ${preview.sourceBefore.EffectiveEndDate || "(blank)"} → ${preview.sourceAfter.EffectiveEndDate}`, `New ${preview.newDraft.PersonaID}: SupersedesPersonaID ${preview.newDraft.SupersedesPersonaID}, EffectiveStartDate ${preview.newDraft.EffectiveStartDate}`, ``, `No source changes will be saved unless you confirm.`].join("\n");
+    if(!window.confirm(message)) return;
+    const saved = createUpdatedPersonaVersion(editorSelectedPersonaID, startDate, true, "Browser Persona Editor");
+    runDatabaseHealth(); editorSelectedPersonaID = saved.PersonaID; personaEditorMode = "edit-anyway"; renderAll();
+  }catch(err){ alert(err.message); }
+}
 function editActivePersonaAnyway(){
   const selected = DB.personas.find(p => p.PersonaID === editorSelectedPersonaID);
   if(!selected || !isExistingActivePersona(selected)) return;
@@ -795,18 +817,22 @@ function selectedPricingFilter(){
 function selectedFamilyFilters(){
   return [...document.querySelectorAll('#familyFilter input[type="checkbox"]:checked')].map(input=>input.value);
 }
+function selectedLifecycleFilter(){ return document.getElementById("lifecycleFilter")?.value || "Active"; }
 function personaFiltersActive(){
   const query = document.getElementById("globalSearch")?.value || "";
   const families = selectedFamilyFilters();
   const pricing = selectedPricingFilter();
-  return Boolean(query.trim() || families.length || pricing);
+  const lifecycle = selectedLifecycleFilter();
+  return Boolean(query.trim() || families.length || pricing || lifecycle);
 }
 function visiblePersonas(){
   const query = document.getElementById("globalSearch")?.value || "";
   const families = selectedFamilyFilters();
   const pricing = selectedPricingFilter();
   if(!personaFiltersActive()) return [];
-  return searchPersonas(query, families, pricing);
+  const lifecycle = selectedLifecycleFilter();
+  const rows = searchPersonas(query, families, pricing);
+  return lifecycle === "all" ? rows : rows.filter(p => personaLifecycleStatus(p) === lifecycle);
 }
 function updateFilterSummary(){
   const summary = document.getElementById("activeFilterSummary");
@@ -814,7 +840,9 @@ function updateFilterSummary(){
   const query = (document.getElementById("globalSearch")?.value || "").trim();
   const pricing = selectedPricingFilter();
   const families = selectedFamilyFilters();
+  const lifecycle = selectedLifecycleFilter();
   const parts = [];
+  if(lifecycle && lifecycle !== "all") parts.push(`Lifecycle: ${lifecycle}`);
   if(pricing) parts.push(`Pricing: ${pricing}`);
   if(families.length) parts.push(`Families: ${families.join(", ")}`);
   if(query) parts.push(`Search: “${query}”`);

@@ -333,6 +333,48 @@ async function loadBundledDatabase(){
 function cloneDatabasePayload(raw){
   return JSON.parse(JSON.stringify(raw || {}));
 }
+function browserLocalDateString(date=new Date()){
+  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}-${String(date.getDate()).padStart(2,"0")}`;
+}
+let personaCurrentDateProvider = () => browserLocalDateString();
+function setPersonaCurrentDateProvider(provider){ personaCurrentDateProvider = typeof provider === "function" ? provider : () => browserLocalDateString(); }
+function currentPersonaDate(){ return normalizeDateCell(personaCurrentDateProvider()); }
+function normalizeDateCell(value){
+  if(value === undefined || value === null || String(value).trim() === "") return "";
+  if(typeof value === "number"){
+    const date = new Date(Math.round((value - 25569) * 86400 * 1000));
+    return browserLocalDateString(date);
+  }
+  const text = String(value).trim();
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return match ? match[0] : text;
+}
+function isValidCalendarDate(value){
+  const text = String(value || "").trim();
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(!match) return false;
+  const date = new Date(Number(match[1]), Number(match[2])-1, Number(match[3]));
+  return browserLocalDateString(date) === text;
+}
+function addCalendarDays(value, days){
+  const [y,m,d] = String(value).split("-").map(Number);
+  const date = new Date(y, m - 1, d + days);
+  return browserLocalDateString(date);
+}
+function personaLifecycleStatus(persona, today=currentPersonaDate()){
+  const override = String(persona?.LifecycleStatusOverride || "").trim().toLowerCase();
+  if(override === "inactive" || String(persona?.Status || "").toLowerCase() === "inactive") return "Inactive";
+  if(String(persona?.Status || "").toLowerCase() === "draft") return "Draft";
+  const start = normalizeDateCell(persona?.EffectiveStartDate);
+  const end = normalizeDateCell(persona?.EffectiveEndDate);
+  if(start && isValidCalendarDate(start) && today < start) return "Scheduled";
+  if(end && isValidCalendarDate(end) && today > end) return "Expired";
+  if(!start && !end && String(persona?.Status || "").toLowerCase() === "active") return "Active";
+  if(start && isValidCalendarDate(start) && (!end || today <= end)) return "Active";
+  return String(persona?.Status || "").toLowerCase() === "active" ? "Active" : "Draft";
+}
+function isPersonaCurrentlyActive(persona){ return personaLifecycleStatus(persona) === "Active"; }
+
 function normalizeDatabasePayload(raw){
   const normalized = {};
   Object.keys(raw || {}).forEach(key => {
@@ -341,7 +383,11 @@ function normalizeDatabasePayload(raw){
   if(Array.isArray(normalized[SHEET_MAP.personas])){
     normalized[SHEET_MAP.personas] = normalized[SHEET_MAP.personas].map(row => ({
       ...row,
-      Fiber: normalizeBooleanCell(row.Fiber)
+      Fiber: normalizeBooleanCell(row.Fiber),
+      EffectiveStartDate: normalizeDateCell(row.EffectiveStartDate),
+      EffectiveEndDate: normalizeDateCell(row.EffectiveEndDate),
+      SupersedesPersonaID: row.SupersedesPersonaID ?? "",
+      LifecycleStatusOverride: row.LifecycleStatusOverride ?? ""
     }));
   }
   return normalized;
@@ -878,7 +924,7 @@ function enhanceDatabase(){
   });
 }
 
-const PERSONA_EDITOR_FIELDS = ["PersonaID", "PersonaName", "FamilyGroup", "FamilyGroupID", "PricingSet", "PricingSetID", "Status", "PromoIcon", "EquipInc", "SymSpeed", "Fiber", "DisclaimerID", "Notes", "ModifiedBy", "ModifiedDate"];
+const PERSONA_EDITOR_FIELDS = ["PersonaID", "PersonaName", "FamilyGroup", "FamilyGroupID", "PricingSet", "PricingSetID", "Status", "EffectiveStartDate", "EffectiveEndDate", "SupersedesPersonaID", "LifecycleStatusOverride", "PromoIcon", "EquipInc", "SymSpeed", "Fiber", "DisclaimerID", "Notes", "ModifiedBy", "ModifiedDate"];
 const PERSONA_REQUIRED_FIELDS = ["PersonaID", "PersonaName", "FamilyGroup", "FamilyGroupID", "PricingSet", "PricingSetID", "Status"];
 const SPEED_OPTION_FIELDS = ["ReferenceID", "PersonaID", "SpeedOption", "DisplaySpeed", "DownloadMbps", "UploadSpeed", "PricingType", "FirstPaidPrice", "RegularRate", "ScheduleID", "DisplayOrder", "Active"];
 const SPEED_OPTION_REQUIRED_FIELDS = ["ReferenceID", "PersonaID", "SpeedOption", "DisplaySpeed", "DownloadMbps", "UploadSpeed", "PricingType", "ScheduleID"];
@@ -999,6 +1045,8 @@ function normalizePersonaForSave(input, existingPersona={}, modifiedBy="Persona 
   row.EquipInc = normalizeBooleanCell(row.EquipInc);
   row.SymSpeed = normalizeBooleanCell(row.SymSpeed);
   row.Fiber = normalizeBooleanCell(row.Fiber);
+  row.EffectiveStartDate = normalizeDateCell(row.EffectiveStartDate);
+  row.EffectiveEndDate = normalizeDateCell(row.EffectiveEndDate);
   row.ModifiedBy = modifiedBy || "Persona Editor";
   row.ModifiedDate = now;
   return row;
@@ -1010,6 +1058,15 @@ function validatePersonaDraft(input, originalPersonaID=""){
   if(id && !/^[A-Za-z0-9_-]+$/.test(id)) errors.PersonaID = "Use letters, numbers, underscores, or hyphens only.";
   if(id && id !== originalPersonaID && DB.personas.some(row => row.PersonaID === id)) errors.PersonaID = "PersonaID already exists.";
   if(input.DisclaimerID && !DB.disclaimers.some(row => row.DisclaimerID === input.DisclaimerID)) errors.DisclaimerID = "DisclaimerID does not exist.";
+  const start = normalizeDateCell(input.EffectiveStartDate);
+  const end = normalizeDateCell(input.EffectiveEndDate);
+  if(start && !isValidCalendarDate(start)) errors.EffectiveStartDate = "Use YYYY-MM-DD.";
+  if(end && !isValidCalendarDate(end)) errors.EffectiveEndDate = "Use YYYY-MM-DD.";
+  if(start && end && isValidCalendarDate(start) && isValidCalendarDate(end) && end < start) errors.EffectiveEndDate = "End date cannot be before start date.";
+  if(input.SupersedesPersonaID){
+    if(input.SupersedesPersonaID === id) errors.SupersedesPersonaID = "A persona cannot supersede itself.";
+    else if(!DB.personas.some(row => row.PersonaID === input.SupersedesPersonaID)) errors.SupersedesPersonaID = "Superseded PersonaID does not exist.";
+  }
   ["EquipInc", "SymSpeed", "Fiber"].forEach(field => {
     const value = input[field];
     if(value !== undefined && value !== null && value !== "" && !isBooleanLike(value)){
@@ -1034,8 +1091,29 @@ function savePersonaDraft(input, originalPersonaID="", modifiedBy="Persona Edito
 function duplicatePersona(personaID, modifiedBy="Persona Editor"){
   const source = DB.personas.find(row => row.PersonaID === personaID);
   if(!source) throw new Error("Persona not found.");
-  const copy = {...source, PersonaID:nextSafePersonaID(), PersonaName:`${source.PersonaName || "Persona"} Copy`, Status:"Draft"};
+  const copy = {...source, PersonaID:nextSafePersonaID(), PersonaName:`${source.PersonaName || "Persona"} Copy`, Status:"Draft", SupersedesPersonaID:"", EffectiveStartDate:"", EffectiveEndDate:"", LifecycleStatusOverride:""};
   return savePersonaDraft(copy, "", modifiedBy);
+}
+function createUpdatedPersonaVersion(sourcePersonaID, startDate, confirm=false, modifiedBy="Persona Editor"){
+  const source = DB.personas.find(row => row.PersonaID === sourcePersonaID);
+  if(!source) throw new Error("Persona not found.");
+  const normalizedStart = normalizeDateCell(startDate);
+  if(!normalizedStart || !isValidCalendarDate(normalizedStart)) throw new Error("Replacement start date must be YYYY-MM-DD.");
+  const sourceEndDate = addCalendarDays(normalizedStart, -1);
+  const newDraft = {...source, PersonaID:nextSafePersonaID(), PersonaName:`${source.PersonaName || "Persona"} Updated`, Status:"Draft", EffectiveStartDate:normalizedStart, EffectiveEndDate:"", SupersedesPersonaID:source.PersonaID, LifecycleStatusOverride:""};
+  const sourceUpdate = {...source, EffectiveEndDate:sourceEndDate};
+  const preview = {sourceBefore:cloneDatabasePayload(source), sourceAfter:sourceUpdate, newDraft};
+  if(!confirm) return preview;
+  if(!EditingSession.isEditing) startEditingSession();
+  const raw = activeDatabaseSnapshot();
+  const rows = Array.isArray(raw[SHEET_MAP.personas]) ? raw[SHEET_MAP.personas] : [];
+  const index = rows.findIndex(row => row.PersonaID === source.PersonaID);
+  if(index < 0) throw new Error("Superseded source persona is missing from the working copy.");
+  rows[index] = normalizePersonaForSave(sourceUpdate, rows[index], modifiedBy);
+  rows.push(normalizePersonaForSave(newDraft, {}, modifiedBy));
+  raw[SHEET_MAP.personas] = rows;
+  updateWorkingCopy(raw, "persona-version", {sheet:SHEET_MAP.personas, PersonaID:newDraft.PersonaID, SupersedesPersonaID:source.PersonaID});
+  return DB.personas.find(row => row.PersonaID === newDraft.PersonaID);
 }
 function setPersonaStatus(personaID, status, modifiedBy="Persona Editor"){
   const row = DB.personas.find(item => item.PersonaID === personaID);
@@ -1160,6 +1238,46 @@ function removePricingScheduleRow(scheduleID, sequence){
   updateWorkingCopy(raw, "pricing-row-remove", {sheet:SHEET_MAP.schedules, ScheduleID:scheduleID, Sequence:sequence});
 }
 
+
+function dateRangesOverlap(aStart, aEnd, bStart, bEnd){
+  const aS = aStart || "0000-01-01", aE = aEnd || "9999-12-31", bS = bStart || "0000-01-01", bE = bEnd || "9999-12-31";
+  return aS <= bE && bS <= aE;
+}
+function validatePersonaLifecycleRecords(personas=DB.personas){
+  const records = [];
+  const byId = Object.fromEntries(personas.map(p => [p.PersonaID, p]));
+  personas.forEach(persona => {
+    const start = normalizeDateCell(persona.EffectiveStartDate), end = normalizeDateCell(persona.EffectiveEndDate);
+    if(start && !isValidCalendarDate(start)) records.push(healthRecord(persona.PersonaID, "EffectiveStartDate is malformed; use YYYY-MM-DD.", {EffectiveStartDate:persona.EffectiveStartDate}));
+    if(end && !isValidCalendarDate(end)) records.push(healthRecord(persona.PersonaID, "EffectiveEndDate is malformed; use YYYY-MM-DD.", {EffectiveEndDate:persona.EffectiveEndDate}));
+    if(start && end && isValidCalendarDate(start) && isValidCalendarDate(end) && end < start) records.push(healthRecord(persona.PersonaID, "EffectiveEndDate is before EffectiveStartDate.", {EffectiveStartDate:start, EffectiveEndDate:end}));
+    if(persona.SupersedesPersonaID){
+      if(persona.SupersedesPersonaID === persona.PersonaID) records.push(healthRecord(persona.PersonaID, "SupersedesPersonaID cannot reference itself.", {SupersedesPersonaID:persona.SupersedesPersonaID}));
+      else if(!byId[persona.SupersedesPersonaID]) records.push(healthRecord(persona.PersonaID, "SupersedesPersonaID target is missing.", {SupersedesPersonaID:persona.SupersedesPersonaID}));
+    }
+  });
+  personas.forEach(persona => {
+    const seen = new Set([persona.PersonaID]); let next = persona.SupersedesPersonaID;
+    while(next){ if(seen.has(next)){ records.push(healthRecord(persona.PersonaID, "Version chain is circular.", {SupersedesPersonaID:persona.SupersedesPersonaID})); break; } seen.add(next); next = byId[next]?.SupersedesPersonaID; }
+  });
+  function chainRoot(persona){
+    const seen = new Set(); let current = persona;
+    while(current?.SupersedesPersonaID && byId[current.SupersedesPersonaID] && !seen.has(current.PersonaID)){
+      seen.add(current.PersonaID); current = byId[current.SupersedesPersonaID];
+    }
+    return current?.PersonaID || persona.PersonaID;
+  }
+  const groups = groupBy(personas.filter(p => p.SupersedesPersonaID || personas.some(other => other.SupersedesPersonaID === p.PersonaID)), row => chainRoot(row));
+  Object.values(groups).forEach(rows => rows.forEach((a,i)=>rows.slice(i+1).forEach(b => {
+    if(dateRangesOverlap(normalizeDateCell(a.EffectiveStartDate), normalizeDateCell(a.EffectiveEndDate), normalizeDateCell(b.EffectiveStartDate), normalizeDateCell(b.EffectiveEndDate))){
+      records.push(healthRecord(`${a.PersonaID}/${b.PersonaID}`, "Persona versions have overlapping effective date ranges.", {PersonaID:a.PersonaID, OtherPersonaID:b.PersonaID}));
+    }
+    if(!normalizeDateCell(a.EffectiveEndDate) && !normalizeDateCell(b.EffectiveEndDate) && isPersonaCurrentlyActive(a) && isPersonaCurrentlyActive(b)){
+      records.push(healthRecord(`${a.PersonaID}/${b.PersonaID}`, "Conflicting open-ended active versions.", {PersonaID:a.PersonaID, OtherPersonaID:b.PersonaID}));
+    }
+  })));
+  return records;
+}
 function runDatabaseHealth(){
   DB.health = buildHealth();
   DB.raw[SHEET_MAP.health] = DB.health.map(row => ({Section:row.Section, Check:row.Check, Status:row.Status, Count:row.Count, Details:row.Details}));
@@ -1169,7 +1287,7 @@ function runDatabaseHealth(){
 
 function groupBy(arr, key){
   return arr.reduce((acc,row)=>{
-    const k = row[key] || "";
+    const k = (typeof key === "function" ? key(row) : row[key]) || "";
     if(!acc[k]) acc[k]=[];
     acc[k].push(row);
     return acc;
@@ -1216,6 +1334,16 @@ function buildHealth(){
     Count:missingModifiedByRecords.length,
     Details:healthDetailsFromRecords(missingModifiedByRecords),
     Records:missingModifiedByRecords
+  });
+
+  const lifecycleRecords = validatePersonaLifecycleRecords(DB.personas);
+  rows.push({
+    Section:"Personas",
+    Check:"Persona lifecycle scheduling",
+    Status:lifecycleRecords.length?"BAD":"OK",
+    Count:lifecycleRecords.length,
+    Details:lifecycleRecords.length ? healthDetailsFromRecords(lifecycleRecords) : "Persona lifecycle dates and version chains are valid.",
+    Records:lifecycleRecords
   });
 
   const invalidFiberRecords = DB.personas
