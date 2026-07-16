@@ -33,6 +33,16 @@ let EditingSession = {
 };
 
 const RECORD_ID_FIELDS = ["PersonaID", "SpeedOptionID", "ScheduleID", "ModifierID", "PersonaModifierID", "DisclaimerID", "IconID", "Setting"];
+const EDITABLE_DATABASE_SHEETS = new Set([
+  "05_Personas",
+  "06_SpeedOptions",
+  "07_PricingSchedules",
+  "04_Modifiers",
+  "10_PersonaModifiers",
+  "08_Disclaimers",
+  "09_Icons"
+]);
+const RUNTIME_ONLY_FIELDS = new Set(["IconPath", "IconRecord", "ResolvedPath", "speeds", "schedules", "modifiers", "disclaimer"]);
 
 function stableStringify(value){
   if(Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
@@ -44,17 +54,41 @@ function stableStringify(value){
 function rawPayloadEquals(a, b){
   return stableStringify(a || {}) === stableStringify(b || {});
 }
+function canonicalizeRowForComparison(row){
+  const cleaned = {};
+  Object.keys(row || {}).sort().forEach(key => {
+    if(RUNTIME_ONLY_FIELDS.has(key)) return;
+    cleaned[key] = row[key];
+  });
+  return cleaned;
+}
+function canonicalSnapshotForComparison(raw, editableOnly=true){
+  const normalized = normalizeDatabasePayload(raw || {});
+  const snapshot = {};
+  Object.keys(normalized || {}).sort().forEach(sheet => {
+    if(editableOnly && !EDITABLE_DATABASE_SHEETS.has(sheet)) return;
+    if(Array.isArray(normalized[sheet])){
+      snapshot[sheet] = normalized[sheet].map(canonicalizeRowForComparison);
+    }
+  });
+  return snapshot;
+}
 function sheetRecordKey(sheetName, row, index){
+  if(sheetName === "06_SpeedOptions") return `${sheetName}:SpeedOption:${row?.PersonaID || ""}|${row?.SpeedOption || ""}|${row?.ReferenceID || index}`;
+  if(sheetName === "07_PricingSchedules") return `${sheetName}:PricingRow:${row?.ScheduleID || ""}|${row?.ReferenceID || ""}|${row?.Sequence ?? index}|${row?.StartMonth ?? ""}|${row?.EndMonth ?? ""}`;
+  if(sheetName === "10_PersonaModifiers") return `${sheetName}:PersonaModifier:${row?.PersonaID || ""}|${row?.ModifierID || ""}`;
   const idField = RECORD_ID_FIELDS.find(field => row && row[field] !== undefined && row[field] !== "");
   const id = idField ? row[idField] : index;
   return `${sheetName}:${idField || "Row"}:${id}`;
 }
 function snapshotRecordStates(baselineRaw, workingRaw){
   const states = {};
-  const sheets = new Set([...Object.keys(baselineRaw || {}), ...Object.keys(workingRaw || {})]);
+  const baseline = canonicalSnapshotForComparison(baselineRaw);
+  const working = canonicalSnapshotForComparison(workingRaw);
+  const sheets = new Set([...Object.keys(baseline || {}), ...Object.keys(working || {})]);
   sheets.forEach(sheet => {
-    const baselineRows = Array.isArray(baselineRaw?.[sheet]) ? baselineRaw[sheet] : [];
-    const workingRows = Array.isArray(workingRaw?.[sheet]) ? workingRaw[sheet] : [];
+    const baselineRows = Array.isArray(baseline?.[sheet]) ? baseline[sheet] : [];
+    const workingRows = Array.isArray(working?.[sheet]) ? working[sheet] : [];
     const baselineByKey = new Map(baselineRows.map((row, index) => [sheetRecordKey(sheet, row, index), row]));
     const workingByKey = new Map(workingRows.map((row, index) => [sheetRecordKey(sheet, row, index), row]));
     workingByKey.forEach((row, key) => {
@@ -106,11 +140,13 @@ function classifyChange(sheet, field, beforeRow, afterRow, status){
 }
 function buildChangeList(beforeRaw, afterRaw){
   const changes = [];
-  const sheets = new Set([...Object.keys(beforeRaw || {}), ...Object.keys(afterRaw || {})]);
+  const beforeSnapshot = canonicalSnapshotForComparison(beforeRaw);
+  const afterSnapshot = canonicalSnapshotForComparison(afterRaw);
+  const sheets = new Set([...Object.keys(beforeSnapshot || {}), ...Object.keys(afterSnapshot || {})]);
   sheets.forEach(sheet => {
-    if(sheet === SHEET_MAP.health || sheet === SHEET_MAP.summary) return;
-    const beforeRows = Array.isArray(beforeRaw?.[sheet]) ? beforeRaw[sheet] : [];
-    const afterRows = Array.isArray(afterRaw?.[sheet]) ? afterRaw[sheet] : [];
+    if(!EDITABLE_DATABASE_SHEETS.has(sheet)) return;
+    const beforeRows = Array.isArray(beforeSnapshot?.[sheet]) ? beforeSnapshot[sheet] : [];
+    const afterRows = Array.isArray(afterSnapshot?.[sheet]) ? afterSnapshot[sheet] : [];
     const beforeByKey = new Map(beforeRows.map((row, index) => [sheetRecordKey(sheet, row, index), row]));
     const afterByKey = new Map(afterRows.map((row, index) => [sheetRecordKey(sheet, row, index), row]));
     const keys = [...new Set([...beforeByKey.keys(), ...afterByKey.keys()])].sort();
@@ -137,8 +173,9 @@ function buildChangeList(beforeRaw, afterRaw){
 function editingChangeList(){ return buildChangeList(EditingSession.baselineSnapshotRaw || {}, EditingSession.workingRaw || {}); }
 function editingChangeSummary(){
   const count = sheet => editingChangeList().filter(c => c.sheet === sheet).length;
-  const healthErrors = DB.health.filter(row => ["BAD", "ERROR"].includes(String(row.Status).toUpperCase())).length;
-  const healthWarnings = DB.health.filter(row => String(row.Status).toUpperCase() === "WARN").length;
+  const liveHealth = buildHealth();
+  const healthErrors = liveHealth.filter(row => ["BAD", "ERROR", "FAIL"].includes(String(row.Status).toUpperCase())).length;
+  const healthWarnings = liveHealth.filter(row => String(row.Status).toUpperCase() === "WARN").length;
   return {personas:count(SHEET_MAP.personas), speedOptions:count(SHEET_MAP.speedOptions), pricingRows:count(SHEET_MAP.schedules), modifiers:count(SHEET_MAP.modifiers), disclaimers:count(SHEET_MAP.disclaimers), assets:count(SHEET_MAP.icons) + editingChangeList().filter(c => c.kind === "changed asset assignment").length, healthErrors, healthWarnings};
 }
 function canUndoEdit(){ return EditingSession.isEditing && EditingSession.commandIndex >= 0; }
@@ -174,7 +211,10 @@ function editingSessionState(){
   return EditingSession;
 }
 function editingHasUnsavedChanges(){
-  return EditingSession.isEditing && !rawPayloadEquals(EditingSession.workingRaw, EditingSession.lastSavedSnapshotRaw);
+  return EditingSession.isEditing && !rawPayloadEquals(
+    canonicalSnapshotForComparison(EditingSession.workingRaw),
+    canonicalSnapshotForComparison(EditingSession.lastSavedSnapshotRaw)
+  );
 }
 function editingStatusText(){
   return editingHasUnsavedChanges() ? "Unsaved Changes" : "Saved";
@@ -196,7 +236,7 @@ function recordEditingSnapshot(type, beforeRaw, afterRaw, meta={}){
 }
 function startEditingSession(){
   if(EditingSession.isEditing) return EditingSession;
-  const published = cloneDatabasePayload(DB.raw);
+  const published = normalizeDatabasePayload(DB.raw);
   EditingSession.isEditing = true;
   EditingSession.publishedRaw = published;
   EditingSession.workingRaw = cloneDatabasePayload(published);
@@ -210,12 +250,13 @@ function startEditingSession(){
 }
 function resetWorkingCopyFromPublished(){
   if(!EditingSession.isEditing) startEditingSession();
-  const before = cloneDatabasePayload(EditingSession.workingRaw);
-  EditingSession.workingRaw = cloneDatabasePayload(EditingSession.publishedRaw);
+  EditingSession.workingRaw = normalizeDatabasePayload(EditingSession.publishedRaw);
   EditingSession.lastSavedSnapshotRaw = cloneDatabasePayload(EditingSession.workingRaw);
-  EditingSession.baselineSnapshotRaw = cloneDatabasePayload(EditingSession.publishedRaw);
+  EditingSession.baselineSnapshotRaw = cloneDatabasePayload(EditingSession.workingRaw);
   applyRawDatabase(EditingSession.workingRaw, {source: DB.loadedFromWorkbook ? "workbook" : "bundled", filename: DB.sourceFilename, preservePublished:true});
-  recordEditingSnapshot("reset", before, EditingSession.workingRaw, {source:"published"});
+  EditingSession.commands = [];
+  EditingSession.commandIndex = -1;
+  refreshEditingRecordStates();
 }
 function discardWorkingChanges(){
   if(!EditingSession.isEditing) return;
