@@ -79,6 +79,10 @@ When no personas are selected, Export Cart displays an empty state and keeps a s
 - **Modifiers** — active modifier records and their resolved icons.
 - **Settings** — repository folder expectations and maintainer notes.
 
+## Secure authenticated publishing design
+
+Authenticated direct publishing is intentionally not implemented in the static Personaville app. The default publishing method remains the downloadable manual publishing package because it does not require storing GitHub credentials in repository files, browser storage, or public JavaScript. See [Secure GitHub Publishing Design for Personaville v2](docs/secure-github-publishing.md) for the evaluated GitHub App, OAuth, server-side publishing service, and GitHub Actions workflow dispatch options.
+
 ## Upload Workbook and JSON publishing workflow
 
 Use this workflow after editing `database/persona-db.xlsx`.
