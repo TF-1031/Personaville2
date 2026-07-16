@@ -174,6 +174,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("personaMarkDeleted")?.addEventListener("click", deleteSelectedPersonaEditor);
   document.getElementById("personaEditAnyway")?.addEventListener("click", editActivePersonaAnyway);
   document.getElementById("personaEditorSave")?.addEventListener("click", savePersonaEditor);
+  document.getElementById("personaEditorCancel")?.addEventListener("click", startPersonaViewExisting);
+  document.getElementById("personaEditorSchedule")?.addEventListener("click", savePersonaEditor);
   document.getElementById("speedOptionCreateNew")?.addEventListener("click", createSpeedOptionEditor);
   document.getElementById("speedOptionDuplicate")?.addEventListener("click", duplicateSelectedSpeedOptionEditor);
   document.getElementById("speedOptionActivate")?.addEventListener("click", () => activeSelectedSpeedOptionEditor(true));
