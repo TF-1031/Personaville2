@@ -274,6 +274,7 @@ function availablePromotionIcons(){
     const file = normalizeIconFile(icon.FileName);
     if(file) byFile.set(file, {...icon, FileName:file, ResolvedPath:resolveIconPath(file)});
   });
+  if(typeof AssetManager !== "undefined") AssetManager.staged.filter(asset => asset.category === "Promotion Icons").forEach(asset => byFile.set(normalizeIconFile(asset.filename), {IconID:asset.stagedId, IconName:asset.displayName || asset.filename, FileName:asset.filename, ResolvedPath:assetDataUrl(asset)}));
   return [...byFile.values()].sort((a,b)=>String(a.FileName).localeCompare(String(b.FileName)));
 }
 function closePromotionIconPicker(){
@@ -308,11 +309,11 @@ function renderPromotionIconField(value=""){
     ]),
     el("input",{id:searchId, class:"search", type:"search", placeholder:"Search assets/icons/ filenames", "aria-controls":gridId, oninput:event=>renderPromotionIconGrid(event.currentTarget.value, normalized), onkeydown:event=>{ if(event.key === "Escape") closePromotionIconPicker(); }}),
     el("div",{id:gridId, class:"promotion-icon-grid", role:"listbox", "aria-label":"Available promotion icons from assets/icons"}),
-    el("div",{class:"promotion-icon-upload"},[el("span",{class:"pill gray"},["Upload New coming soon"])])
+    el("div",{class:"promotion-icon-upload"},[el("button",{type:"button", class:"btn small", onclick:()=>{ setView("admin"); setAdminSection("assets", {focus:true}); }},["Upload New in Asset Manager"])])
   ]);
   const actions = el("div",{class:"promotion-icon-actions"},[
     el("button",{type:"button", class:"btn", "aria-expanded":"false", "aria-controls":chooserId, onclick:event=>{ const open = chooser.hidden; closePromotionIconPicker(); chooser.hidden = !open; event.currentTarget.setAttribute("aria-expanded", String(open)); if(open){ renderPromotionIconGrid("", normalized); setTimeout(()=>document.getElementById(searchId)?.focus(), 0); }}},["Choose Icon"]),
-    el("button",{type:"button", class:"btn", disabled:true, "aria-label":"Upload New coming soon"},["Upload New"]),
+    el("button",{type:"button", class:"btn", onclick:()=>{ setView("admin"); setAdminSection("assets", {focus:true}); }},["Upload New"]),
     el("button",{type:"button", class:"btn small", onclick:()=>choosePromotionIcon("")},["Remove"])
   ]);
   root.append(hidden, current, actions, chooser);
