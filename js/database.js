@@ -21,6 +21,10 @@ let DB = {
 };
 
 let EditingSession = {
+  initState: "empty",
+  notice: "",
+  storageKey: "",
+  databaseIdentity: "",
   isEditing: false,
   publishedRaw: {},
   workingRaw: null,
@@ -170,8 +174,12 @@ function buildChangeList(beforeRaw, afterRaw){
   });
   return changes;
 }
-function editingChangeList(){ return buildChangeList(EditingSession.baselineSnapshotRaw || {}, EditingSession.workingRaw || {}); }
+function editingChangeList(){
+  if(EditingSession.initState !== "ready" || !EditingSession.baselineSnapshotRaw || !EditingSession.workingRaw) return [];
+  return buildChangeList(EditingSession.baselineSnapshotRaw, EditingSession.workingRaw);
+}
 function editingChangeSummary(){
+  if(EditingSession.initState !== "ready") return {personas:0, speedOptions:0, pricingRows:0, modifiers:0, disclaimers:0, assets:0, healthErrors:0, healthWarnings:0};
   const count = sheet => editingChangeList().filter(c => c.sheet === sheet).length;
   const liveHealth = buildHealth();
   const healthErrors = liveHealth.filter(row => ["BAD", "ERROR", "FAIL"].includes(String(row.Status).toUpperCase())).length;
@@ -211,7 +219,7 @@ function editingSessionState(){
   return EditingSession;
 }
 function editingHasUnsavedChanges(){
-  return EditingSession.isEditing && !rawPayloadEquals(
+  return EditingSession.initState === "ready" && EditingSession.isEditing && !rawPayloadEquals(
     canonicalSnapshotForComparison(EditingSession.workingRaw),
     canonicalSnapshotForComparison(EditingSession.lastSavedSnapshotRaw)
   );
@@ -220,6 +228,7 @@ function editingStatusText(){
   return editingHasUnsavedChanges() ? "Unsaved Changes" : "Saved";
 }
 function refreshEditingRecordStates(){
+  if(EditingSession.initState !== "ready" || !EditingSession.baselineSnapshotRaw || !EditingSession.workingRaw){ EditingSession.recordStates = {}; return EditingSession.recordStates; }
   EditingSession.recordStates = snapshotRecordStates(EditingSession.baselineSnapshotRaw, EditingSession.workingRaw);
   return EditingSession.recordStates;
 }
@@ -234,9 +243,105 @@ function recordEditingSnapshot(type, beforeRaw, afterRaw, meta={}){
   refreshEditingRecordStates();
   return command;
 }
+const EDIT_SESSION_SCHEMA_VERSION = "2";
+const EDIT_SESSION_KEY_PREFIX = "personaville-v2-edit-session";
+function collectionCounts(raw){
+  const normalized = normalizeDatabasePayload(raw || {});
+  return {
+    personas:Array.isArray(normalized[SHEET_MAP.personas]) ? normalized[SHEET_MAP.personas].length : 0,
+    speedOptions:Array.isArray(normalized[SHEET_MAP.speedOptions]) ? normalized[SHEET_MAP.speedOptions].length : 0,
+    pricingRows:Array.isArray(normalized[SHEET_MAP.schedules]) ? normalized[SHEET_MAP.schedules].length : 0,
+    modifiers:Array.isArray(normalized[SHEET_MAP.modifiers]) ? normalized[SHEET_MAP.modifiers].length : 0,
+    disclaimers:Array.isArray(normalized[SHEET_MAP.disclaimers]) ? normalized[SHEET_MAP.disclaimers].length : 0,
+    assets:Array.isArray(normalized[SHEET_MAP.icons]) ? normalized[SHEET_MAP.icons].length : 0
+  };
+}
+function logStartupDiagnostic(stage, raw){
+  if(typeof console !== "undefined" && typeof console.debug === "function") console.debug("Personaville startup", stage, collectionCounts(raw));
+}
+function databaseIdentityFor(raw, filename=DB.sourceFilename){
+  const normalized = normalizeDatabasePayload(raw || {});
+  const counts = collectionCounts(normalized);
+  const generated = (Array.isArray(normalized[SHEET_MAP.settings]) ? normalized[SHEET_MAP.settings].find(row => row.Setting === "GeneratedOn")?.Value : "") || "";
+  return encodeURIComponent([filename || "database/persona-db.json", generated, counts.personas, counts.speedOptions, counts.pricingRows, counts.modifiers, counts.disclaimers].join(":"));
+}
+function editingSessionStorageKey(identity=EditingSession.databaseIdentity){ return `${EDIT_SESSION_KEY_PREFIX}:${EDIT_SESSION_SCHEMA_VERSION}:${identity || "unknown"}`; }
+function browserStorage(){ try{ return typeof localStorage !== "undefined" ? localStorage : null; }catch(err){ return null; } }
+function hasExpectedCollections(raw){ return [SHEET_MAP.personas,SHEET_MAP.speedOptions,SHEET_MAP.schedules,SHEET_MAP.modifiers,SHEET_MAP.disclaimers].every(sheet => Array.isArray(raw?.[sheet])); }
+function validateSavedEditingSession(payload, publishedRaw, identity){
+  if(!payload || typeof payload !== "object") return {valid:false, reason:"not an object"};
+  if(payload.schemaVersion !== EDIT_SESSION_SCHEMA_VERSION) return {valid:false, reason:"stale schema version"};
+  if(payload.databaseIdentity !== identity) return {valid:false, reason:"database identity mismatch"};
+  if(!payload.workingRaw || typeof payload.workingRaw !== "object") return {valid:false, reason:"missing working database"};
+  if(!hasExpectedCollections(payload.workingRaw)) return {valid:false, reason:"missing required collections"};
+  const publishedCounts = collectionCounts(publishedRaw), workingCounts = collectionCounts(payload.workingRaw);
+  const totalWorking = workingCounts.personas + workingCounts.speedOptions + workingCounts.pricingRows + workingCounts.modifiers + workingCounts.disclaimers;
+  const totalPublished = publishedCounts.personas + publishedCounts.speedOptions + publishedCounts.pricingRows + publishedCounts.modifiers + publishedCounts.disclaimers;
+  if(totalPublished > 0 && totalWorking === 0) return {valid:false, reason:"empty working collections"};
+  const commands = Array.isArray(payload.commands) ? payload.commands : [];
+  const hasExplicitDeletes = commands.some(command => command?.type && String(command.type).toLowerCase().includes("delete"));
+  if(totalPublished > 0 && totalWorking < Math.max(1, Math.floor(totalPublished * 0.5)) && !hasExplicitDeletes) return {valid:false, reason:"incomplete working collections"};
+  return {valid:true};
+}
+function loadSavedEditingSession(publishedRaw, identity){
+  const storage = browserStorage();
+  if(!storage) return {restored:false};
+  const key = editingSessionStorageKey(identity);
+  const stored = storage.getItem(key);
+  if(!stored) return {restored:false};
+  let payload;
+  try{ payload = JSON.parse(stored); }catch(err){ storage.removeItem(key); return {restored:false, ignored:true, reason:"malformed JSON"}; }
+  const validation = validateSavedEditingSession(payload, publishedRaw, identity);
+  if(!validation.valid){ storage.setItem(`${key}:ignored:${Date.now()}`, stored); storage.removeItem(key); return {restored:false, ignored:true, reason:validation.reason}; }
+  return {restored:true, key, payload};
+}
+function persistEditingSession(){
+  if(EditingSession.initState !== "ready" || !EditingSession.isEditing || !EditingSession.storageKey) return;
+  const storage = browserStorage();
+  if(!storage) return;
+  storage.setItem(EditingSession.storageKey, JSON.stringify({schemaVersion:EDIT_SESSION_SCHEMA_VERSION, databaseIdentity:EditingSession.databaseIdentity, savedAt:new Date().toISOString(), workingRaw:EditingSession.workingRaw, lastSavedSnapshotRaw:EditingSession.lastSavedSnapshotRaw, commands:EditingSession.commands, commandIndex:EditingSession.commandIndex}));
+}
+function clearEditingSessionStorage(){ const storage = browserStorage(); if(storage && EditingSession.storageKey) storage.removeItem(EditingSession.storageKey); }
+function initializeCleanWorkingCopy(published, identity, notice=""){
+  EditingSession.isEditing = true;
+  EditingSession.publishedRaw = cloneDatabasePayload(published);
+  EditingSession.workingRaw = cloneDatabasePayload(published);
+  EditingSession.lastSavedSnapshotRaw = cloneDatabasePayload(EditingSession.workingRaw);
+  EditingSession.baselineSnapshotRaw = cloneDatabasePayload(published);
+  EditingSession.recordStates = {};
+  EditingSession.commands = [];
+  EditingSession.commandIndex = -1;
+  EditingSession.databaseIdentity = identity;
+  EditingSession.storageKey = editingSessionStorageKey(identity);
+  EditingSession.notice = notice;
+  EditingSession.initState = "ready";
+  applyRawDatabase(EditingSession.workingRaw, {source: DB.loadedFromWorkbook ? "workbook" : "bundled", filename: DB.sourceFilename, preservePublished:true});
+  persistEditingSession();
+}
+function initializeEditingSessionFromPublished(raw, options={}){
+  EditingSession.initState = "loading published database";
+  const published = normalizeDatabasePayload(raw);
+  logStartupDiagnostic("published normalized", published);
+  const identity = databaseIdentityFor(published, options.filename || DB.sourceFilename);
+  EditingSession.initState = "restoring editing session";
+  const saved = options.restoreSaved === false ? {restored:false} : loadSavedEditingSession(published, identity);
+  if(saved.restored){
+    EditingSession.isEditing = true; EditingSession.publishedRaw = cloneDatabasePayload(published); EditingSession.workingRaw = normalizeDatabasePayload(saved.payload.workingRaw);
+    EditingSession.lastSavedSnapshotRaw = cloneDatabasePayload(saved.payload.lastSavedSnapshotRaw || EditingSession.workingRaw); EditingSession.baselineSnapshotRaw = cloneDatabasePayload(published);
+    EditingSession.commands = Array.isArray(saved.payload.commands) ? saved.payload.commands : []; EditingSession.commandIndex = Number.isInteger(saved.payload.commandIndex) ? saved.payload.commandIndex : EditingSession.commands.length - 1;
+    EditingSession.databaseIdentity = identity; EditingSession.storageKey = saved.key; EditingSession.notice = ""; EditingSession.initState = "ready";
+    applyRawDatabase(EditingSession.workingRaw, {source: DB.loadedFromWorkbook ? "workbook" : "bundled", filename: DB.sourceFilename, preservePublished:true}); refreshEditingRecordStates(); logStartupDiagnostic("working restored before diff", EditingSession.workingRaw); return EditingSession;
+  }
+  const notice = saved.ignored ? "An invalid saved editing session was ignored. A clean working copy was loaded." : "";
+  initializeCleanWorkingCopy(published, identity, notice);
+  logStartupDiagnostic("working clean before diff", EditingSession.workingRaw);
+  return EditingSession;
+}
+
 function startEditingSession(){
-  if(EditingSession.isEditing) return EditingSession;
+  if(EditingSession.isEditing && EditingSession.initState === "ready") return EditingSession;
   const published = normalizeDatabasePayload(DB.raw);
+  EditingSession.initState = "ready";
   EditingSession.isEditing = true;
   EditingSession.publishedRaw = published;
   EditingSession.workingRaw = cloneDatabasePayload(published);
@@ -245,7 +350,10 @@ function startEditingSession(){
   EditingSession.recordStates = {};
   EditingSession.commands = [];
   EditingSession.commandIndex = -1;
+  EditingSession.databaseIdentity = databaseIdentityFor(published, DB.sourceFilename);
+  EditingSession.storageKey = editingSessionStorageKey(EditingSession.databaseIdentity);
   applyRawDatabase(EditingSession.workingRaw, {source: DB.loadedFromWorkbook ? "workbook" : "bundled", filename: DB.sourceFilename, preservePublished:true});
+  persistEditingSession();
   return EditingSession;
 }
 function resetWorkingCopyFromPublished(){
@@ -256,6 +364,9 @@ function resetWorkingCopyFromPublished(){
   applyRawDatabase(EditingSession.workingRaw, {source: DB.loadedFromWorkbook ? "workbook" : "bundled", filename: DB.sourceFilename, preservePublished:true});
   EditingSession.commands = [];
   EditingSession.commandIndex = -1;
+  if(typeof AssetManager !== "undefined"){ AssetManager.staged = []; AssetManager.meta = {}; AssetManager.history = []; AssetManager.historyIndex = -1; }
+  clearEditingSessionStorage();
+  persistEditingSession();
   refreshEditingRecordStates();
 }
 function discardWorkingChanges(){
@@ -264,10 +375,12 @@ function discardWorkingChanges(){
   EditingSession.workingRaw = cloneDatabasePayload(EditingSession.lastSavedSnapshotRaw);
   applyRawDatabase(EditingSession.workingRaw, {source: DB.loadedFromWorkbook ? "workbook" : "bundled", filename: DB.sourceFilename, preservePublished:true});
   recordEditingSnapshot("discard", before, EditingSession.workingRaw);
+  persistEditingSession();
 }
 function markWorkingCopyDownloaded(){
   if(!EditingSession.isEditing) return;
   EditingSession.lastSavedSnapshotRaw = cloneDatabasePayload(EditingSession.workingRaw);
+  persistEditingSession();
   refreshEditingRecordStates();
 }
 function markRecordState(sheetName, recordKey, state){
@@ -285,7 +398,9 @@ function updateWorkingCopy(raw, type="change", meta={}){
   const before = cloneDatabasePayload(EditingSession.workingRaw);
   EditingSession.workingRaw = cloneDatabasePayload(raw);
   applyRawDatabase(EditingSession.workingRaw, {source: DB.loadedFromWorkbook ? "workbook" : "bundled", filename: DB.sourceFilename, preservePublished:true});
-  return recordEditingSnapshot(type, before, EditingSession.workingRaw, meta);
+  const command = recordEditingSnapshot(type, before, EditingSession.workingRaw, meta);
+  persistEditingSession();
+  return command;
 }
 
 
@@ -369,7 +484,9 @@ async function loadBundledDatabase(){
   const res = await fetch("database/persona-db.json");
   if(!res.ok) throw new Error("Could not load database/persona-db.json");
   const data = await res.json();
+  logStartupDiagnostic("bundled fetch", data);
   applyRawDatabase(data, {source:"bundled", filename:"database/persona-db.json"});
+  initializeEditingSessionFromPublished(DB.raw, {filename:"database/persona-db.json"});
 }
 function cloneDatabasePayload(raw){
   return JSON.parse(JSON.stringify(raw || {}));
@@ -437,6 +554,7 @@ function applyRawDatabase(raw, options={}){
   const normalized = normalizeDatabasePayload(raw);
   DB.raw = normalized;
   if(!options.preservePublished){
+    EditingSession.initState = "loading published database";
     EditingSession.isEditing = false;
     EditingSession.publishedRaw = cloneDatabasePayload(normalized);
     EditingSession.workingRaw = null;
@@ -445,6 +563,7 @@ function applyRawDatabase(raw, options={}){
     EditingSession.recordStates = {};
     EditingSession.commands = [];
     EditingSession.commandIndex = -1;
+    EditingSession.notice = "";
   }
   if(EditingSession.isEditing){
     EditingSession.workingRaw = cloneDatabasePayload(normalized);
