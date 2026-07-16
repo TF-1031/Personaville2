@@ -158,6 +158,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     resetWorkingCopyFromPublished();
     renderAll();
   });
+  document.getElementById("undoEdit")?.addEventListener("click", () => { undoLastEdit(); runDatabaseHealth(); renderAll(); });
+  document.getElementById("redoEdit")?.addEventListener("click", () => { redoLastEdit(); runDatabaseHealth(); renderAll(); });
+  document.getElementById("changeTypeFilter")?.addEventListener("change", event => { editingSessionState().changeFilter = event.target.value; renderChangeReview(); });
   document.getElementById("personaEditorSearch")?.addEventListener("input", renderPersonaEditor);
   document.getElementById("personaCreateNew")?.addEventListener("click", createNewPersonaEditor);
   document.getElementById("personaDuplicate")?.addEventListener("click", duplicateSelectedPersonaEditor);

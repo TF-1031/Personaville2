@@ -19,6 +19,7 @@
       <button class="nav active" data-view="personas" type="button" aria-current="page">Personas</button>
       <button class="nav" data-view="export" type="button">Export Cart</button>
       <button class="nav" data-view="manage" type="button">Manage</button>
+      <button class="nav" data-view="review" type="button">Review Changes</button>
       <button class="nav" data-view="admin" type="button">Admin</button>
     </nav>
 
@@ -163,6 +164,9 @@
             <button id="startEditing" class="btn primary" type="button">Start Editing</button>
             <button id="discardWorkingCopy" class="btn" type="button">Discard Working Changes</button>
             <button id="resetWorkingCopy" class="btn" type="button">Reset from Published Database</button>
+            <button id="undoEdit" class="btn" type="button">Undo</button>
+            <button id="redoEdit" class="btn" type="button">Redo</button>
+            <button class="btn" type="button" onclick="setView('review')">Review Changes</button>
           </div>
           <div id="editingStateSummary" class="kpis dashboard-overview" aria-live="polite"></div>
           <div class="manage-workspace-grid" aria-label="Manage workspace sections">
@@ -262,6 +266,24 @@
             </section>
             <section class="manage-section"><h3>Assets</h3><p class="muted">Editing controls will be added here.</p></section>
           </div>
+        </div>
+      </section>
+
+      <section id="review" class="view">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Uncommitted working copy</p>
+            <h2 id="reviewHeading">Review Changes</h2>
+          </div>
+          <span id="reviewChangeCount" class="pill gray" aria-live="polite" role="status">0 changes</span>
+        </div>
+        <div class="manage-card manage-card-wide" aria-labelledby="reviewHeading">
+          <p class="muted">Review the working copy before export. The published database is preserved until you explicitly download and publish the exported JSON.</p>
+          <div id="reviewSummary" class="kpis dashboard-overview" aria-live="polite"></div>
+          <div class="persona-editor-toolbar">
+            <label class="editor-field" for="changeTypeFilter"><span>Filter by record type</span><select id="changeTypeFilter"><option value="all">All record types</option></select></label>
+          </div>
+          <div id="changeList" class="change-list" aria-live="polite"></div>
         </div>
       </section>
 
