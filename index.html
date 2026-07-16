@@ -71,6 +71,7 @@
           <button id="admin-tab-health" class="admin-tab" role="tab" type="button" aria-selected="false" aria-controls="admin-health" data-admin-section="health">Database Health</button>
           <button id="admin-tab-publish" class="admin-tab" role="tab" type="button" aria-selected="false" aria-controls="admin-publish" data-admin-section="publish">Publish Database</button>
           <button id="admin-tab-modifiers" class="admin-tab" role="tab" type="button" aria-selected="false" aria-controls="admin-modifiers" data-admin-section="modifiers">Modifiers</button>
+          <button id="admin-tab-assets" class="admin-tab" role="tab" type="button" aria-selected="false" aria-controls="admin-assets" data-admin-section="assets">Asset Manager</button>
           <button id="admin-tab-settings" class="admin-tab" role="tab" type="button" aria-selected="false" aria-controls="admin-settings" data-admin-section="settings">Settings</button>
         </div>
 
@@ -124,6 +125,11 @@
         <section id="admin-modifiers" class="admin-panel" role="tabpanel" aria-labelledby="admin-tab-modifiers" tabindex="0" hidden>
           <div class="section-head"><h3>Modifiers</h3></div>
           <div id="modifierList" class="modifier-list" aria-live="polite"></div>
+        </section>
+
+        <section id="admin-assets" class="admin-panel" role="tabpanel" aria-labelledby="admin-tab-assets" tabindex="0" hidden>
+          <div class="section-head"><h3>Asset Manager</h3></div>
+          <div id="assetManagerRoot" class="asset-manager-root" aria-live="polite"></div>
         </section>
 
         <section id="admin-settings" class="admin-panel" role="tabpanel" aria-labelledby="admin-tab-settings" tabindex="0" hidden>
@@ -298,6 +304,7 @@
 
   <script src="js/database.js"></script>
   <script src="js/render.js"></script>
+  <script src="js/asset-manager.js"></script>
   <script src="js/header.js"></script>
   <script src="js/app.js"></script>
 </body>
