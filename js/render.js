@@ -109,7 +109,7 @@ function renderPersonaEditor(){
   rows.forEach(p => list.appendChild(el("button",{class:`persona-editor-row${p.PersonaID===editorSelectedPersonaID?" active":""}${personaEditorStateClass(p)}`, type:"button", "aria-pressed":String(p.PersonaID===editorSelectedPersonaID), onclick:()=>{editorSelectedPersonaID=p.PersonaID; personaEditorMode = personaEditorMode === "create-from-existing" ? "create-from-existing" : "view"; renderPersonaEditor();}},[
     p.PersonaID===editorSelectedPersonaID ? el("span",{class:"selected-marker", "aria-hidden":"true"},["✓ Selected"]) : null,
     el("strong",{},[p.PersonaName || "Untitled"]),
-    el("span",{},[`${p.PersonaID || "No ID"} • ${typeof personaLifecycleStatus === "function" ? personaLifecycleStatus(p) : (p.Status || "No status")}`])
+    el("span",{class:"persona-row-meta"},[p.PersonaID || "No ID", el("span",{class:"lifecycle-badge"},[typeof personaLifecycleStatus === "function" ? personaLifecycleStatus(p) : (p.Status || "No status")])])
   ])));
   document.getElementById("personaEditorCount").textContent = `${rows.length} persona${rows.length===1?"":"s"}`;
   updatePersonaEditorActionState();
@@ -131,7 +131,11 @@ function renderPersonaStartPanel(){
   form.appendChild(emptyState("Choose a persona management action.", "Create a blank draft, create from an existing persona, or view existing personas read-only first."));
   updatePersonaEditorSaveState("Saved");
   const save = document.getElementById("personaEditorSave");
+  const cancel = document.getElementById("personaEditorCancel");
+  const schedule = document.getElementById("personaEditorSchedule");
   if(save) save.disabled = true;
+  if(cancel) cancel.textContent = "Cancel";
+  if(schedule) schedule.disabled = true;
   renderSpeedOptionEditor();
   renderPersonaModifierEditor();
 }
@@ -167,12 +171,12 @@ const PERSONA_FIELD_HELP = {
   LifecycleStatusOverride: "Use Inactive only for manual deactivation."
 };
 const PERSONA_EDITOR_SECTIONS = [
-  {title:"General", fields:["Status", "PersonaName", "FamilyGroup", "PricingSet"]},
-  {title:"Lifecycle", fields:["EffectiveStartDate", "EffectiveEndDate", "SupersedesPersonaID", "LifecycleStatusOverride"]},
-  {title:"Features", fields:["EquipInc", "SymSpeed", "Fiber", "PromoIcon"]},
+  {title:"Identity & Publication", fields:["PersonaName", "Status", "EffectiveStartDate", "EffectiveEndDate", "FamilyGroup", "PricingSet"]},
+  {title:"Features", fields:["EquipInc", "SymSpeed", "Fiber"]},
+  {title:"Promotion", fields:["PromoIcon"]},
   {title:"Legal", fields:["DisclaimerID"]},
   {title:"Notes", fields:["Notes"]},
-  {title:"System Information", fields:["PersonaID", "FamilyGroupID", "PricingSetID", "ModifiedBy", "ModifiedDate"]}
+  {title:"System Information", collapsed:true, fields:["PersonaID", "FamilyGroupID", "PricingSetID", "DisclaimerID", "SupersedesPersonaID", "ModifiedBy", "ModifiedDate"]}
 ];
 function personaFieldLabel(name){
   return PERSONA_FIELD_LABELS[name] || name;
@@ -240,11 +244,15 @@ function editorField(name, value, errors={}, readonlyForm=false){
   if(name === "FamilyGroup" || name === "PricingSet") return personaChoiceField(name, value, errors);
   if(name === "PromoIcon") return personaFieldWrapper(name, el("div",{id:"promotionIconPicker", class:"promotion-icon-picker"},[]), errors);
   if(name === "DisclaimerID"){
-    const input = el("select",{id, name},[
-      el("option",{value:""},["Choose…"]),
-      ...DB.disclaimers.map(d => el("option",{value:d.DisclaimerID, selected:d.DisclaimerID === value},[d.Title ? `${d.Title} (${d.DisclaimerID})` : d.DisclaimerID]))
+    const current = DB.disclaimers.find(d => d.DisclaimerID === value);
+    const listId = "personaDisclaimerChoices";
+    const input = el("input",{id, name, list:listId, value:value || "", placeholder:"Search by title or ID", readonly:readonlyForm});
+    const preview = el("details",{class:"disclaimer-inline-preview"},[
+      el("summary",{},["Preview disclaimer"]),
+      el("p",{},[current?.DisclaimerText || "Choose a disclaimer to preview legal copy."])
     ]);
-    return personaFieldWrapper(name, input, errors);
+    const datalist = el("datalist",{id:listId},DB.disclaimers.map(d => el("option",{value:d.DisclaimerID, label:d.Title ? `${d.Title} (${d.DisclaimerID})` : d.DisclaimerID},[])));
+    return personaFieldWrapper(name, el("div",{class:"disclaimer-picker"},[input, datalist, preview]), errors);
   }
   let readonly = ["FamilyGroupID", "PricingSetID", "ModifiedBy"].includes(name);
   if(name === "PersonaID") readonly = Boolean(document.getElementById("personaEditorForm")?.dataset.originalPersonaId);
@@ -254,7 +262,7 @@ function editorField(name, value, errors={}, readonlyForm=false){
       formatPersonaDateTime(value) || "Not saved yet"
     ]), errors);
   }
-  const input = ["Notes"].includes(name) ? el("textarea",{id, name, rows:"3"},[value || ""]) :
+  const input = ["Notes"].includes(name) ? el("textarea",{id, name, rows:"4", placeholder:"Internal notes"},[value || ""]) :
     ["EquipInc","SymSpeed","Fiber"].includes(name) ? el("input",{id, name, type:"checkbox", value:"TRUE", checked:truthy(value), disabled:readonlyForm}) :
     el("input",{id, name, value:value ?? "", readonly: readonly || readonlyForm});
   return personaFieldWrapper(name, input, errors);
@@ -300,11 +308,12 @@ function renderPromotionIconField(value=""){
     ]),
     el("input",{id:searchId, class:"search", type:"search", placeholder:"Search assets/icons/ filenames", "aria-controls":gridId, oninput:event=>renderPromotionIconGrid(event.currentTarget.value, normalized), onkeydown:event=>{ if(event.key === "Escape") closePromotionIconPicker(); }}),
     el("div",{id:gridId, class:"promotion-icon-grid", role:"listbox", "aria-label":"Available promotion icons from assets/icons"}),
-    el("div",{class:"promotion-icon-upload"},[el("button",{type:"button", class:"btn", disabled:true, "aria-label":"Upload New coming soon"},["Upload New"]), el("span",{class:"pill gray"},["Coming Soon"])])
+    el("div",{class:"promotion-icon-upload"},[el("span",{class:"pill gray"},["Upload New coming soon"])])
   ]);
   const actions = el("div",{class:"promotion-icon-actions"},[
-    el("button",{type:"button", class:"btn", "aria-expanded":"false", "aria-controls":chooserId, onclick:event=>{ const open = chooser.hidden; closePromotionIconPicker(); chooser.hidden = !open; event.currentTarget.setAttribute("aria-expanded", String(open)); if(open){ renderPromotionIconGrid("", normalized); setTimeout(()=>document.getElementById(searchId)?.focus(), 0); }}},["Choose Existing"]),
-    el("button",{type:"button", class:"btn small", onclick:()=>choosePromotionIcon("")},["Clear Icon"])
+    el("button",{type:"button", class:"btn", "aria-expanded":"false", "aria-controls":chooserId, onclick:event=>{ const open = chooser.hidden; closePromotionIconPicker(); chooser.hidden = !open; event.currentTarget.setAttribute("aria-expanded", String(open)); if(open){ renderPromotionIconGrid("", normalized); setTimeout(()=>document.getElementById(searchId)?.focus(), 0); }}},["Choose Icon"]),
+    el("button",{type:"button", class:"btn", disabled:true, "aria-label":"Upload New coming soon"},["Upload New"]),
+    el("button",{type:"button", class:"btn small", onclick:()=>choosePromotionIcon("")},["Remove"])
   ]);
   root.append(hidden, current, actions, chooser);
   renderPromotionIconGrid("", normalized);
@@ -355,18 +364,25 @@ function renderPersonaEditorForm(persona, errors={}){
   if(personaEditorMode === "create-from-existing"){ duplicateSelectedPersonaEditor(); return; }
   const readonlyForm = personaEditorReadOnly(persona);
   const counts = personaRelationships(persona.PersonaID);
-  form.dataset.originalPersonaId = persona.PersonaID || "";
+  form.dataset.originalPersonaId = DB.personas.some(row => row.PersonaID === persona.PersonaID) ? (persona.PersonaID || "") : "";
   if(editorSelectedPersonaID){
     form.appendChild(el("div",{class:"editor-mode-banner"},[readonlyForm ? "Read-only active record. Create an updated version before changing published content." : "Editable draft or explicitly unlocked record."]));
-    form.appendChild(el("div",{class:"editor-related-counts"},[
-      el("span",{},[`Speeds: ${counts.speeds}`]), el("span",{},[`Modifiers: ${counts.modifiers}`]), el("span",{},[`Disclaimer links: ${counts.disclaimers}`])
-    ]));
   }
   PERSONA_EDITOR_SECTIONS.forEach(section => {
-    const sectionNode = el("fieldset",{class:"persona-editor-section"},[
-      el("legend",{},[section.title])
-    ]);
-    section.fields.forEach(field => sectionNode.appendChild(editorField(field, persona[field], errors, readonlyForm)));
+    const content = [];
+    section.fields.forEach(field => {
+      if(section.title === "System Information" && field === "DisclaimerID"){
+        content.push(personaFieldWrapper(field, el("span",{class:"readonly-field"},[persona[field] || "Not set"]), errors));
+      }else{
+        content.push(editorField(field, persona[field], errors, readonlyForm));
+      }
+    });
+    if(section.title === "System Information") content.push(el("div",{class:"editor-related-counts system-counts"},[
+      el("span",{},[`Speeds: ${counts.speeds}`]), el("span",{},[`Modifiers: ${counts.modifiers}`]), el("span",{},[`Disclaimer links: ${counts.disclaimers}`])
+    ]));
+    const sectionNode = section.collapsed
+      ? el("details",{class:"persona-editor-section", open:false},[el("summary",{},[section.title]), ...content])
+      : el("fieldset",{class:`persona-editor-section ${section.title === "Features" ? "features-section" : ""}`},[el("legend",{},[section.title]), ...content]);
     form.appendChild(sectionNode);
   });
   form.addEventListener("input", () => updatePersonaEditorSaveState("Unsaved Changes"), {once:true});
@@ -375,7 +391,20 @@ function renderPersonaEditorForm(persona, errors={}){
   renderPromotionIconField(persona.PromoIcon);
   if(readonlyForm){ document.getElementById("promotionIconPicker")?.querySelectorAll("button").forEach(node => node.disabled = true); }
   const save = document.getElementById("personaEditorSave");
-  if(save) save.disabled = readonlyForm;
+  const cancel = document.getElementById("personaEditorCancel");
+  const schedule = document.getElementById("personaEditorSchedule");
+  const isNewDraft = !form.dataset.originalPersonaId || personaEditorMode === "create-new";
+  if(save){ save.disabled = readonlyForm; save.textContent = isNewDraft ? "Save Draft" : "Save Changes"; }
+  if(cancel){ cancel.disabled = false; cancel.textContent = isNewDraft ? "Cancel" : "Discard Changes"; }
+  if(schedule){ schedule.disabled = readonlyForm; schedule.textContent = isNewDraft ? "Schedule Persona" : "Schedule/Update Schedule"; }
+  if(readonlyForm){
+    if(cancel) cancel.textContent = "Create Updated Version";
+    if(cancel) cancel.onclick = createUpdatedVersionPersonaEditor;
+    if(schedule){ schedule.textContent = "More Actions"; schedule.disabled = false; schedule.onclick = () => document.getElementById("personaMoreActions")?.setAttribute("open", ""); }
+  }else{
+    if(cancel) cancel.onclick = startPersonaViewExisting;
+    if(schedule) schedule.onclick = savePersonaEditor;
+  }
   updatePersonaEditorSaveState();
   renderSpeedOptionEditor();
   renderPersonaModifierEditor();
@@ -408,7 +437,7 @@ function savePersonaEditor(){
 function createNewPersonaEditor(){
   startEditingSession();
   const id = nextSafePersonaID();
-  personaEditorMode = "edit-anyway";
+  personaEditorMode = "create-new";
   editorSelectedPersonaID = id;
   renderPersonaEditorForm({PersonaID:id, Status:"Draft", EquipInc:"FALSE", SymSpeed:"FALSE", Fiber:"FALSE"});
 }
