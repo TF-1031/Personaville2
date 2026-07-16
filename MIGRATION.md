@@ -73,3 +73,13 @@ Rollback is operationally simple because v2 must not replace v1 during RC testin
 3. Revert or close unmerged v2 release-candidate PRs as needed.
 4. If a v2 data package was prepared but not promoted, discard the package and keep the production v1 workbook/JSON as the source of truth.
 5. If v2 was accidentally promoted, restore the stable v1 repository branch and GitHub Pages settings to the last known-good v1 commit, then invalidate any links that point users to the v2 preview.
+
+## Lifecycle scheduling migration notes
+
+Personaville v2 adds four optional lifecycle fields to `05_Personas`: `EffectiveStartDate`, `EffectiveEndDate`, `SupersedesPersonaID`, and `LifecycleStatusOverride`. Existing v1 records can be imported without these fields; active records with blank start and end dates continue to behave as active legacy records, while blank end dates on dated records mean the record remains effective indefinitely until an end date, manual inactive override, or replacement workflow changes it.
+
+Workbook migration should add the same four columns to `05_Personas` when maintainers want scheduled behavior. Dates must be browser-local calendar dates in `YYYY-MM-DD` form, with no time values. JSON migration preserves these fields as plain persona-row properties, so rollback is straightforward: keep the previous production workbook/JSON, or remove the four lifecycle columns/properties if returning to a v1 workflow that does not understand them.
+
+For replacements, use **Create Updated Version** instead of editing a published active row directly. The workflow creates a draft replacement with `SupersedesPersonaID` pointing to the predecessor, previews both records, sets the predecessor `EffectiveEndDate` to the day before the replacement `EffectiveStartDate`, and surfaces overlap, missing-target, self-superseding, circular-chain, and multiple-open-ended-version findings in Database Health before publishing.
+
+Publishing packages include the lifecycle JSON fields, workbook columns when workbook export is available, health findings, and change summaries. If critical lifecycle health checks are `BAD`, `ERROR`, or `FAIL`, do not mark the release ready; resolve the data or document an explicit health override before packaging.
