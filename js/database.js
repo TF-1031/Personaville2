@@ -98,7 +98,7 @@ function rowDisplayName(sheet, row, key){
 }
 function classifyChange(sheet, field, beforeRow, afterRow, status){
   if(sheet === SHEET_MAP.personaModifiers) return status === "created" ? "added relationship" : status === "deleted" ? "removed relationship" : "modified relationship";
-  if(["PromoIcon", "IconFile", "FileName"].includes(field) || sheet === SHEET_MAP.icons) return "changed asset assignment";
+  if(["PromoIcon", "IconFile", "FileName", "DefaultIcon"].includes(field) || sheet === SHEET_MAP.icons) return "changed asset assignment";
   if(status === "created") return "created record";
   if(status === "deleted") return "deleted record";
   if(["Status", "Active"].includes(field) && (String(afterRow?.[field] || "").toLowerCase() === "deleted" || String(afterRow?.[field] || "").toLowerCase() === "false")) return "deleted/deactivated record";
@@ -596,7 +596,10 @@ function publishingPackageFiles(options={}){
   addText("database/persona-db.json", updatedDatabaseJson());
   const workbookBytes = updatedWorkbookBytes();
   if(workbookBytes) files.push({path:"database/persona-db.xlsx", bytes:workbookBytes});
-  (typeof AssetManager !== "undefined" ? AssetManager.staged : []).forEach(asset => files.push({path:asset.path, bytes:dataUrlToBytes(asset.dataUrl)}));
+  (typeof AssetManager !== "undefined" ? AssetManager.staged : []).forEach(asset => files.push({path:asset.path, bytes:dataUrlToBytes(asset.dataUrl || "")}));
+  if(typeof AssetManager !== "undefined" && (AssetManager.staged.length || Object.keys(AssetManager.meta || {}).length)){
+    addText("reports/asset-manifest.json", JSON.stringify({stagedAssets:AssetManager.staged.map(({filename,path,category,size,width,height,replacing})=>({filename,path,category,size,width,height,replacing})), metadata:AssetManager.meta}, null, 2) + "\n");
+  }
   addText("reports/change-summary.json", JSON.stringify(publishingChangeSummary(), null, 2) + "\n");
   addText("reports/health-report.json", JSON.stringify(publishingHealthReport(rows), null, 2) + "\n");
   addText("reports/release-notes-draft.md", publishingReleaseNotesDraft());
@@ -1719,6 +1722,7 @@ function buildHealth(options = {}){
 
   const iconRecords = [];
   const iconFiles = new Set(DB.icons.map(i => normalizeIconFile(i.FileName)).filter(Boolean));
+  if(typeof AssetManager !== "undefined") AssetManager.staged.forEach(asset => { if(asset.category === "Promotion Icons" || asset.category === "Modifier Icons") iconFiles.add(normalizeIconFile(asset.filename)); });
   DB.icons.forEach(icon => {
     const resolved = resolveIconPath(icon.FileName);
     if(!resolved){
@@ -1735,8 +1739,19 @@ function buildHealth(options = {}){
     if(!normalized || !iconFiles.has(normalized)){
       iconRecords.push(healthRecord(
         persona.PersonaName || persona.PersonaID,
-        "Persona PromoIcon does not match a FileName in the Icons table.",
+        "Persona PromoIcon does not match a FileName in the Icons table or staged promotion icon assets.",
         {PersonaID:persona.PersonaID, PromoIcon:persona.PromoIcon || "", ResolvedPath:resolved}
+      ));
+    }
+  });
+  (DB.raw[SHEET_MAP.pricingSets] || []).forEach(pricingSet => {
+    const normalized = normalizeIconFile(pricingSet.DefaultIcon);
+    const resolved = resolveIconPath(pricingSet.DefaultIcon);
+    if(normalized && !iconFiles.has(normalized)){
+      iconRecords.push(healthRecord(
+        pricingSet.PricingSetName || pricingSet.PricingSetID,
+        "Pricing DefaultIcon does not match a FileName in the Icons table or staged icon assets.",
+        {PricingSetID:pricingSet.PricingSetID, DefaultIcon:pricingSet.DefaultIcon || "", ResolvedPath:resolved}
       ));
     }
   });
@@ -1746,7 +1761,7 @@ function buildHealth(options = {}){
     if(!normalized || !iconFiles.has(normalized)){
       iconRecords.push(healthRecord(
         modifier.ModifierName || modifier.ModifierID,
-        "Modifier IconFile does not match a FileName in the Icons table.",
+        "Modifier IconFile does not match a FileName in the Icons table or staged modifier icon assets.",
         {ModifierID:modifier.ModifierID, IconFile:modifier.IconFile || "", ResolvedPath:resolved}
       ));
     }
