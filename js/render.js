@@ -116,6 +116,7 @@ const PERSONA_FIELD_LABELS = {
   PromoIcon: "Promotion Icon",
   EquipInc: "Equipment Included",
   SymSpeed: "Symmetrical Speed",
+  Fiber: "Fiber",
   DisclaimerID: "Disclaimer",
   ModifiedBy: "Modified By",
   ModifiedDate: "Modified Date"
@@ -128,7 +129,7 @@ const PERSONA_FIELD_HELP = {
 };
 const PERSONA_EDITOR_SECTIONS = [
   {title:"General", fields:["Status", "PersonaName", "FamilyGroup", "PricingSet"]},
-  {title:"Features", fields:["EquipInc", "SymSpeed", "PromoIcon"]},
+  {title:"Features", fields:["EquipInc", "SymSpeed", "Fiber", "PromoIcon"]},
   {title:"Legal", fields:["DisclaimerID"]},
   {title:"Notes", fields:["Notes"]},
   {title:"System Information", fields:["PersonaID", "FamilyGroupID", "PricingSetID", "ModifiedBy", "ModifiedDate"]}
@@ -211,7 +212,7 @@ function editorField(name, value, errors={}){
     ]), errors);
   }
   const input = ["Notes"].includes(name) ? el("textarea",{id, name, rows:"3"},[value || ""]) :
-    ["EquipInc","SymSpeed"].includes(name) ? el("input",{id, name, type:"checkbox", value:"TRUE", checked:truthy(value)}) :
+    ["EquipInc","SymSpeed","Fiber"].includes(name) ? el("input",{id, name, type:"checkbox", value:"TRUE", checked:truthy(value)}) :
     el("input",{id, name, value:value ?? "", readonly});
   return personaFieldWrapper(name, input, errors);
 }
@@ -272,7 +273,7 @@ function createNewPersonaEditor(){
   startEditingSession();
   const id = nextSafePersonaID();
   editorSelectedPersonaID = id;
-  renderPersonaEditorForm({PersonaID:id, Status:"Draft", EquipInc:"FALSE", SymSpeed:"FALSE"});
+  renderPersonaEditorForm({PersonaID:id, Status:"Draft", EquipInc:"FALSE", SymSpeed:"FALSE", Fiber:"FALSE"});
 }
 function duplicateSelectedPersonaEditor(){
   if(!editorSelectedPersonaID) return;
@@ -739,6 +740,7 @@ function personaTile(p){
   const chips=[];
   if(truthy(p.EquipInc)) chips.push(el("span",{class:"chip feature"},["✓ Equip Inc"]));
   if(truthy(p.SymSpeed)) chips.push(el("span",{class:"chip feature"},["✓ Sym Speed"]));
+  if(truthy(p.Fiber)) chips.push(el("span",{class:"chip feature"},["✓ Fiber"]));
   (p.modifiers||[]).forEach(m => chips.push(modifierChip(m)));
   const rows = (p.speeds||[]).map(s => el("tr",{},[
     el("td",{class:"so", "aria-label":s.SpeedOption || "Speed option"},[compactSpeedOptionMarker()]),
@@ -822,6 +824,7 @@ function renderDetail(p){
   const chips = el("div",{class:"chips"},[]);
   if(truthy(p.EquipInc)) chips.appendChild(el("span",{class:"chip feature"},["✓ Equip Inc"]));
   if(truthy(p.SymSpeed)) chips.appendChild(el("span",{class:"chip feature"},["✓ Sym Speed"]));
+  if(truthy(p.Fiber)) chips.appendChild(el("span",{class:"chip feature"},["✓ Fiber"]));
   (p.modifiers||[]).forEach(m=>chips.appendChild(modifierChip(m)));
   panel.appendChild(chips);
   panel.appendChild(el("div",{class:"detail-section"},[
@@ -1099,6 +1102,7 @@ function printablePersonaCard(p, index=0, total=1){
   const chips = el("div",{class:"chips"},[]);
   if(truthy(p.EquipInc)) chips.appendChild(el("span",{class:"chip feature"},["✓ Equip Inc"]));
   if(truthy(p.SymSpeed)) chips.appendChild(el("span",{class:"chip feature"},["✓ Sym Speed"]));
+  if(truthy(p.Fiber)) chips.appendChild(el("span",{class:"chip feature"},["✓ Fiber"]));
   (p.modifiers||[]).forEach(m=>chips.appendChild(modifierChip(m)));
   inner.appendChild(chips);
   p.speeds.forEach(s => inner.appendChild(speedDetail(s)));

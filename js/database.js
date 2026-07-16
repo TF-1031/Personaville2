@@ -186,6 +186,15 @@ const SHEET_MAP = {
 function truthy(v){
   return String(v ?? "").toLowerCase() === "true" || v === true || v === 1;
 }
+function isBooleanLike(v){
+  return ["true", "false"].includes(String(v ?? "").trim().toLowerCase()) || v === true || v === false || v === 1 || v === 0;
+}
+function normalizeBooleanCell(v, defaultValue="FALSE"){
+  if(v === undefined || v === null || String(v).trim() === "") return defaultValue;
+  if(truthy(v)) return "TRUE";
+  if(isBooleanLike(v)) return "FALSE";
+  return v;
+}
 function money(v){
   if(v === null || v === undefined || v === "") return "";
   const n = Number(v);
@@ -222,6 +231,12 @@ function normalizeDatabasePayload(raw){
   Object.keys(raw || {}).forEach(key => {
     normalized[key] = Array.isArray(raw[key]) ? raw[key].map(row => ({...row})) : raw[key];
   });
+  if(Array.isArray(normalized[SHEET_MAP.personas])){
+    normalized[SHEET_MAP.personas] = normalized[SHEET_MAP.personas].map(row => ({
+      ...row,
+      Fiber: normalizeBooleanCell(row.Fiber)
+    }));
+  }
   return normalized;
 }
 function applyRawDatabase(raw, options={}){
@@ -597,7 +612,7 @@ function enhanceDatabase(){
   });
 }
 
-const PERSONA_EDITOR_FIELDS = ["PersonaID", "PersonaName", "FamilyGroup", "FamilyGroupID", "PricingSet", "PricingSetID", "Status", "PromoIcon", "EquipInc", "SymSpeed", "DisclaimerID", "Notes", "ModifiedBy", "ModifiedDate"];
+const PERSONA_EDITOR_FIELDS = ["PersonaID", "PersonaName", "FamilyGroup", "FamilyGroupID", "PricingSet", "PricingSetID", "Status", "PromoIcon", "EquipInc", "SymSpeed", "Fiber", "DisclaimerID", "Notes", "ModifiedBy", "ModifiedDate"];
 const PERSONA_REQUIRED_FIELDS = ["PersonaID", "PersonaName", "FamilyGroup", "FamilyGroupID", "PricingSet", "PricingSetID", "Status"];
 const SPEED_OPTION_FIELDS = ["ReferenceID", "PersonaID", "SpeedOption", "DisplaySpeed", "DownloadMbps", "UploadSpeed", "PricingType", "FirstPaidPrice", "RegularRate", "ScheduleID", "DisplayOrder", "Active"];
 const SPEED_OPTION_REQUIRED_FIELDS = ["ReferenceID", "PersonaID", "SpeedOption", "DisplaySpeed", "DownloadMbps", "UploadSpeed", "PricingType", "ScheduleID"];
@@ -714,8 +729,9 @@ function normalizePersonaForSave(input, existingPersona={}, modifiedBy="Persona 
   const now = new Date().toISOString();
   const row = {...existingPersona};
   PERSONA_EDITOR_FIELDS.forEach(field => { row[field] = input[field] ?? ""; });
-  row.EquipInc = truthy(row.EquipInc) ? "TRUE" : "FALSE";
-  row.SymSpeed = truthy(row.SymSpeed) ? "TRUE" : "FALSE";
+  row.EquipInc = normalizeBooleanCell(row.EquipInc);
+  row.SymSpeed = normalizeBooleanCell(row.SymSpeed);
+  row.Fiber = normalizeBooleanCell(row.Fiber);
   row.ModifiedBy = modifiedBy || "Persona Editor";
   row.ModifiedDate = now;
   return row;
@@ -727,6 +743,12 @@ function validatePersonaDraft(input, originalPersonaID=""){
   if(id && !/^[A-Za-z0-9_-]+$/.test(id)) errors.PersonaID = "Use letters, numbers, underscores, or hyphens only.";
   if(id && id !== originalPersonaID && DB.personas.some(row => row.PersonaID === id)) errors.PersonaID = "PersonaID already exists.";
   if(input.DisclaimerID && !DB.disclaimers.some(row => row.DisclaimerID === input.DisclaimerID)) errors.DisclaimerID = "DisclaimerID does not exist.";
+  ["EquipInc", "SymSpeed", "Fiber"].forEach(field => {
+    const value = input[field];
+    if(value !== undefined && value !== null && value !== "" && !isBooleanLike(value)){
+      errors[field] = "Use TRUE or FALSE.";
+    }
+  });
   return {valid:Object.keys(errors).length === 0, errors};
 }
 function savePersonaDraft(input, originalPersonaID="", modifiedBy="Persona Editor"){
@@ -927,6 +949,22 @@ function buildHealth(){
     Count:missingModifiedByRecords.length,
     Details:healthDetailsFromRecords(missingModifiedByRecords),
     Records:missingModifiedByRecords
+  });
+
+  const invalidFiberRecords = DB.personas
+    .filter(persona => !isBooleanLike(persona.Fiber))
+    .map(persona => healthRecord(
+      persona.PersonaName || persona.PersonaID,
+      "Fiber must be a boolean TRUE or FALSE value.",
+      {PersonaID:persona.PersonaID || "", PersonaName:persona.PersonaName || "", Fiber:persona.Fiber ?? ""}
+    ));
+  rows.push({
+    Section:"Personas",
+    Check:"Fiber boolean values",
+    Status:invalidFiberRecords.length?"BAD":"OK",
+    Count:invalidFiberRecords.length,
+    Details:invalidFiberRecords.length ? healthDetailsFromRecords(invalidFiberRecords) : "All personas have boolean Fiber values.",
+    Records:invalidFiberRecords
   });
 
   const duplicatePricingKeys = {};
