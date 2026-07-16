@@ -1311,7 +1311,8 @@ function searchPersonas(query, family, pricing){
     return blob.includes(q);
   });
 }
-function buildHealth(){
+function buildHealth(options = {}){
+  const includeWorkbookRows = options.includeWorkbookRows !== false;
   const rows = [];
   const personaById = Object.fromEntries(DB.personas.map(p => [p.PersonaID, p]));
   const disc = new Set(DB.disclaimers.map(d=>d.DisclaimerID));
@@ -1766,8 +1767,136 @@ function buildHealth(){
     Records:iconRecords
   });
 
+  if(!includeWorkbookRows) return rows;
   const workbookRows = normalizedWorkbookHealthRows();
   return rows.concat(workbookRows);
+}
+
+const HEALTH_EXPORT_COLUMNS = [
+  "Severity",
+  "Section",
+  "Check",
+  "PersonaID",
+  "PersonaName",
+  "SpeedOptionID",
+  "SpeedOption",
+  "ScheduleID",
+  "ReferenceID",
+  "ModifierID",
+  "DisclaimerID",
+  "AssetPath",
+  "Message",
+  "ExistingValue",
+  "ExpectedValue",
+  "SuggestedAction"
+];
+const HEALTH_ERROR_STATUSES = new Set(["BAD", "ERROR", "FAIL"]);
+function healthExportTimestamp(date=new Date()){
+  const pad = n => String(n).padStart(2, "0");
+  return `${date.getFullYear()}${pad(date.getMonth()+1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}`;
+}
+function healthExportSource(){
+  return DB.sourceFilename || (DB.loadedFromWorkbook ? "Uploaded workbook" : "Published database");
+}
+function healthExportDirtyState(){
+  if(typeof editingHasUnsavedChanges === "function") return editingHasUnsavedChanges() ? "dirty" : "clean";
+  return EditingSession.isEditing ? "dirty" : "clean";
+}
+function liveWorkingCopyHealthRows(){
+  return buildHealth({includeWorkbookRows:false});
+}
+function healthSeverity(row){
+  return String(row.Status || "").trim().toUpperCase() || "UNKNOWN";
+}
+function healthFindingRows(severityFilter="all"){
+  const rows = liveWorkingCopyHealthRows();
+  const findings = [];
+  rows.forEach(row => {
+    const severity = healthSeverity(row);
+    if(severity === "OK") return;
+    if(severityFilter === "warnings" && severity !== "WARN") return;
+    if(severityFilter === "errors" && !HEALTH_ERROR_STATUSES.has(severity)) return;
+    const records = Array.isArray(row.Records) && row.Records.length ? row.Records : [healthRecord(row.Check || "Health check", row.Details || "No details available.", {})];
+    records.forEach(record => {
+      const fields = record.Fields || {};
+      findings.push({
+        Severity: severity,
+        Section: row.Section || "",
+        Check: row.Check || "",
+        PersonaID: fields.PersonaID ?? "",
+        PersonaName: fields.PersonaName ?? "",
+        SpeedOptionID: fields.SpeedOptionID ?? "",
+        SpeedOption: fields.SpeedOption ?? "",
+        ScheduleID: fields.ScheduleID ?? fields.IntroFreeScheduleID ?? "",
+        ReferenceID: fields.ReferenceID ?? "",
+        ModifierID: fields.ModifierID ?? "",
+        DisclaimerID: fields.DisclaimerID ?? "",
+        AssetPath: fields.AssetPath ?? fields.ResolvedPath ?? fields.SourceFile ?? fields.IconFile ?? fields.PromoIcon ?? "",
+        Message: record.Reason || row.Details || "",
+        ExistingValue: fields.ExistingValue ?? fields.CurrentValue ?? fields.ActualValue ?? fields.Price ?? fields.CurrentPrice ?? fields.ExistingMonthRanges ?? "",
+        ExpectedValue: fields.ExpectedValue ?? fields.MissingMonthRanges ?? fields.MissingModifierIDs ?? fields.ScheduleIDs ?? "",
+        SuggestedAction: fields.SuggestedAction ?? suggestedHealthAction(row, record)
+      });
+    });
+  });
+  return findings;
+}
+function suggestedHealthAction(row, record){
+  const section = String(row.Section || "").toLowerCase();
+  if(section.includes("asset")) return "Resolve the missing or mismatched asset path in the working copy.";
+  if(section.includes("relationship")) return "Update the related working-copy IDs so each reference points to an existing record.";
+  if(section.includes("pricing")) return "Review and correct the pricing schedule rows in the working copy.";
+  if(section.includes("audit")) return "Update the audit metadata in the working copy.";
+  return record?.Reason ? "Review the listed working-copy record and correct the reported health finding." : "Review Database Health for this working-copy finding.";
+}
+function csvEscape(value){
+  const text = String(value ?? "");
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+function healthFindingsCsv(findings){
+  return "\ufeff" + [HEALTH_EXPORT_COLUMNS.join(","), ...findings.map(row => HEALTH_EXPORT_COLUMNS.map(column => csvEscape(row[column])).join(","))].join("\r\n") + "\r\n";
+}
+function healthExportCounts(findings=healthFindingRows("all")){
+  return findings.reduce((counts, row) => {
+    counts.total += 1;
+    if(row.Severity === "WARN") counts.warnings += 1;
+    if(HEALTH_ERROR_STATUSES.has(row.Severity)) counts.errors += 1;
+    counts.bySeverity[row.Severity] = (counts.bySeverity[row.Severity] || 0) + 1;
+    return counts;
+  }, {total:0, warnings:0, errors:0, bySeverity:{}});
+}
+function healthLogText(){
+  const generatedAt = new Date().toISOString();
+  const findings = healthFindingRows("all");
+  const counts = healthExportCounts(findings);
+  const grouped = groupBy(findings, row => `${row.Severity} / ${row.Section || "Unsectioned"}`);
+  const lines = [
+    "Personaville Health Log",
+    `Generated: ${generatedAt}`,
+    `Source: ${healthExportSource()}`,
+    `Version: ${publishingDatabaseVersion()}`,
+    `Dirty state: ${healthExportDirtyState()}`,
+    `Counts: ${counts.total} finding(s), ${counts.warnings} warning(s), ${counts.errors} error(s)`,
+    ""
+  ];
+  if(!findings.length){
+    lines.push("No warning or error findings were found in the live working-copy health results.");
+  }else{
+    Object.keys(grouped).sort().forEach(group => {
+      lines.push(`[${group}]`);
+      grouped[group].forEach(f => lines.push(`- ${f.Check}: ${f.Message} (${[f.PersonaID, f.SpeedOptionID, f.ScheduleID, f.ReferenceID, f.ModifierID, f.DisclaimerID, f.AssetPath].filter(Boolean).join(" / ") || "record-level detail unavailable"})`));
+      lines.push("");
+    });
+  }
+  return lines.join("\n") + "\n";
+}
+function healthExportPayload(kind){
+  const timestamp = healthExportTimestamp();
+  if(kind === "log") return {filename:`Personaville-Health-Log-${timestamp}.txt`, type:"text/plain;charset=utf-8", text:healthLogText(), count:1};
+  const filter = kind === "warnings" ? "warnings" : kind === "errors" ? "errors" : "all";
+  const findings = healthFindingRows(filter);
+  const prefix = kind === "warnings" ? "Warnings" : kind === "errors" ? "Errors" : "Report";
+  return {filename:`Personaville-Health-${prefix}-${timestamp}.csv`, type:"text/csv;charset=utf-8", text:healthFindingsCsv(findings), count:findings.length};
 }
 
 const MODIFIER_EDITOR_FIELDS = ["ModifierID", "ModifierName", "Category", "IconFile", "Active", "Description"];

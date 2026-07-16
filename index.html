@@ -94,6 +94,13 @@
 
         <section id="admin-health" class="admin-panel" role="tabpanel" aria-labelledby="admin-tab-health" tabindex="0" hidden>
           <div class="section-head"><h3>Database Health</h3></div>
+          <div class="persona-editor-toolbar health-export-actions">
+            <button id="adminExportHealthReport" class="btn" type="button">Export Health Report</button>
+            <button id="adminExportHealthWarnings" class="btn" type="button">Export Warnings Only</button>
+            <button id="adminExportHealthErrors" class="btn" type="button">Export Errors Only</button>
+            <button id="adminDownloadHealthLog" class="btn" type="button">Download Health Log</button>
+            <span id="adminHealthExportStatus" class="muted" aria-live="polite"></span>
+          </div>
           <div id="healthList" class="health-list" aria-live="polite"></div>
         </section>
 
@@ -298,6 +305,13 @@
         <div class="manage-card manage-card-wide" aria-labelledby="reviewHeading">
           <p class="muted">Review working-copy changes and database records before export. Published data is preserved until you explicitly download and publish the exported JSON.</p>
           <div id="reviewSummary" class="kpis dashboard-overview" aria-live="polite"></div>
+          <div class="persona-editor-toolbar health-export-actions">
+            <button id="reviewExportHealthReport" class="btn" type="button">Export Health Report</button>
+            <button id="reviewExportHealthWarnings" class="btn" type="button">Export Warnings Only</button>
+            <button id="reviewExportHealthErrors" class="btn" type="button">Export Errors Only</button>
+            <button id="reviewDownloadHealthLog" class="btn" type="button">Download Health Log</button>
+            <span id="reviewHealthExportStatus" class="muted" aria-live="polite"></span>
+          </div>
           <div class="persona-editor-toolbar">
             <label class="editor-field" for="changeTypeFilter"><span>Filter by record type</span><select id="changeTypeFilter"><option value="all">All record types</option></select></label>
           </div>
