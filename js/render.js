@@ -19,14 +19,14 @@ function el(tag, attrs={}, children=[]){
 }
 
 function iconImage(path, alt, context={}, fallbackText="1:1"){
-  if(!path) return el("span",{class:"icon-fallback"},[fallbackText]);
+  if(!path) return el("span",{class:"icon-fallback", "aria-label":"No icon selected"},[fallbackText]);
   return el("img",{
     src:path,
     alt:alt || "",
     loading:"lazy",
     onerror:(event)=>{
       recordIconLoadFailure(path, context);
-      event.currentTarget.parentNode.replaceChildren(el("span",{class:"icon-fallback"},[fallbackText]));
+      event.currentTarget.parentNode.replaceChildren(el("span",{class:"icon-fallback missing-icon", "aria-label":"Missing icon"},[fallbackText || "Missing"]));
       renderHealth();
     }
   });
@@ -196,6 +196,7 @@ function personaFieldWrapper(name, input, errors={}){
 function editorField(name, value, errors={}){
   const id = `personaEdit-${name}`;
   if(name === "FamilyGroup" || name === "PricingSet") return personaChoiceField(name, value, errors);
+  if(name === "PromoIcon") return personaFieldWrapper(name, el("div",{id:"promotionIconPicker", class:"promotion-icon-picker"},[]), errors);
   if(name === "DisclaimerID"){
     const input = el("select",{id, name},[
       el("option",{value:""},["Choose…"]),
@@ -216,6 +217,87 @@ function editorField(name, value, errors={}){
     el("input",{id, name, value:value ?? "", readonly});
   return personaFieldWrapper(name, input, errors);
 }
+
+function availablePromotionIcons(){
+  const byFile = new Map();
+  DB.icons.forEach(icon => {
+    const file = normalizeIconFile(icon.FileName);
+    if(file) byFile.set(file, {...icon, FileName:file, ResolvedPath:resolveIconPath(file)});
+  });
+  return [...byFile.values()].sort((a,b)=>String(a.FileName).localeCompare(String(b.FileName)));
+}
+function closePromotionIconPicker(){
+  document.querySelectorAll(".promotion-icon-chooser").forEach(node => node.hidden = true);
+}
+function choosePromotionIcon(file){
+  const input = document.getElementById("personaEdit-PromoIcon");
+  if(!input) return;
+  input.value = normalizeIconFile(file);
+  updatePersonaEditorSaveState("Unsaved Changes");
+  renderPromotionIconField(input.value);
+}
+function renderPromotionIconField(value=""){
+  const root = document.getElementById("promotionIconPicker");
+  if(!root) return;
+  const normalized = normalizeIconFile(value);
+  root.innerHTML = "";
+  const selectedIcon = availablePromotionIcons().find(icon => normalizeIconFile(icon.FileName) === normalized);
+  const currentPath = normalized && selectedIcon ? resolveIconPath(normalized) : "";
+  const hidden = el("input",{type:"hidden", id:"personaEdit-PromoIcon", name:"PromoIcon", value:normalized});
+  const current = el("div",{class:"promotion-icon-current"},[
+    iconSlot(currentPath, normalized ? `Promotion icon ${normalized}` : "No promotion icon selected", {type:"Persona", id:document.getElementById("personaEditorForm")?.dataset.originalPersonaId || "draft", file:normalized}),
+    el("div",{},[el("strong",{},[normalized ? (selectedIcon?.IconName || "Missing icon") : "No icon selected"]), el("span",{class:"muted"},[normalized || "Choose an icon from assets/icons/"])])
+  ]);
+  const chooserId = "promotionIconChooser";
+  const searchId = "promotionIconSearch";
+  const gridId = "promotionIconGrid";
+  const chooser = el("div",{id:chooserId, class:"promotion-icon-chooser", hidden:true},[
+    el("div",{class:"promotion-icon-chooser__head"},[
+      el("label",{for:searchId},["Search icon filenames"]),
+      el("button",{type:"button", class:"btn small", onclick:closePromotionIconPicker},["Close"])
+    ]),
+    el("input",{id:searchId, class:"search", type:"search", placeholder:"Search assets/icons/ filenames", "aria-controls":gridId, oninput:event=>renderPromotionIconGrid(event.currentTarget.value, normalized), onkeydown:event=>{ if(event.key === "Escape") closePromotionIconPicker(); }}),
+    el("div",{id:gridId, class:"promotion-icon-grid", role:"listbox", "aria-label":"Available promotion icons from assets/icons"}),
+    el("div",{class:"promotion-icon-upload"},[el("button",{type:"button", class:"btn", disabled:true, "aria-label":"Upload New coming soon"},["Upload New"]), el("span",{class:"pill gray"},["Coming Soon"])])
+  ]);
+  const actions = el("div",{class:"promotion-icon-actions"},[
+    el("button",{type:"button", class:"btn", "aria-expanded":"false", "aria-controls":chooserId, onclick:event=>{ const open = chooser.hidden; closePromotionIconPicker(); chooser.hidden = !open; event.currentTarget.setAttribute("aria-expanded", String(open)); if(open){ renderPromotionIconGrid("", normalized); setTimeout(()=>document.getElementById(searchId)?.focus(), 0); }}},["Choose Existing"]),
+    el("button",{type:"button", class:"btn small", onclick:()=>choosePromotionIcon("")},["Clear Icon"])
+  ]);
+  root.append(hidden, current, actions, chooser);
+  renderPromotionIconGrid("", normalized);
+}
+function renderPromotionIconGrid(query="", selected=""){
+  const grid = document.getElementById("promotionIconGrid");
+  if(!grid) return;
+  const q = String(query || "").toLowerCase().trim();
+  const selectedFile = normalizeIconFile(selected || document.getElementById("personaEdit-PromoIcon")?.value);
+  const icons = availablePromotionIcons().filter(icon => !q || [icon.FileName, icon.IconName, icon.IconID].join(" ").toLowerCase().includes(q));
+  grid.innerHTML = "";
+  if(!icons.length){ grid.appendChild(el("p",{class:"muted"},["No matching icons found."])); return; }
+  icons.forEach((icon, index) => {
+    const file = normalizeIconFile(icon.FileName);
+    const selectedState = file === selectedFile;
+    grid.appendChild(el("button",{type:"button", class:`promotion-icon-option${selectedState ? " selected" : ""}`, role:"option", "aria-selected":String(selectedState), "aria-label":`Choose promotion icon ${file}`, onclick:()=>choosePromotionIcon(file), onkeydown:event=>{
+      const options = [...grid.querySelectorAll(".promotion-icon-option")];
+      const current = options.indexOf(event.currentTarget);
+      const cols = 4;
+      let next = current;
+      if(event.key === "ArrowRight") next = Math.min(options.length - 1, current + 1);
+      else if(event.key === "ArrowLeft") next = Math.max(0, current - 1);
+      else if(event.key === "ArrowDown") next = Math.min(options.length - 1, current + cols);
+      else if(event.key === "ArrowUp") next = Math.max(0, current - cols);
+      else if(event.key === "Home") next = 0;
+      else if(event.key === "End") next = options.length - 1;
+      else return;
+      event.preventDefault(); options[next]?.focus();
+    }},[
+      iconSlot(icon.ResolvedPath, icon.IconName || file, {type:"PromotionIconPicker", id:icon.IconID, name:icon.IconName, file}),
+      el("span",{},[file])
+    ]));
+  });
+}
+
 function updatePersonaEditorSaveState(text){
   const indicator = document.getElementById("personaEditorSaveState");
   if(indicator){
@@ -242,6 +324,7 @@ function renderPersonaEditorForm(persona, errors={}){
   });
   form.addEventListener("input", () => updatePersonaEditorSaveState("Unsaved Changes"), {once:true});
   form.addEventListener("change", () => updatePersonaEditorSaveState("Unsaved Changes"), {once:true});
+  renderPromotionIconField(persona.PromoIcon);
   updatePersonaEditorSaveState();
   renderSpeedOptionEditor();
   renderPersonaModifierEditor();

@@ -149,8 +149,11 @@ function normalizeIconFile(file){
   const value = String(file || "").trim();
   if(!value) return "";
   if(/^https?:\/\//i.test(value) || value.startsWith("/")) return value;
-  const relative = value.replace(/^\.\//, "");
-  return relative.replace(/^(?:assets\/icons\/|icons\/)+/i, "");
+  let relative = value.replace(/^\.\//, "");
+  while(/^(?:assets\/icons\/|icons\/)/i.test(relative)){
+    relative = relative.replace(/^(?:assets\/icons\/|icons\/)/i, "");
+  }
+  return relative;
 }
 function resolveIconPath(file){
   const normalized = normalizeIconFile(file);
@@ -257,15 +260,15 @@ function applyRawDatabase(raw, options={}){
   }
   DB.loadedFromWorkbook = options.source === "workbook";
   DB.downloadableRaw = DB.loadedFromWorkbook ? cloneDatabasePayload(normalized) : null;
-  DB.personas = normalized[SHEET_MAP.personas] || [];
-  DB.speedOptions = normalized[SHEET_MAP.speedOptions] || [];
-  DB.schedules = normalized[SHEET_MAP.schedules] || [];
-  DB.modifiers = normalized[SHEET_MAP.modifiers] || [];
-  DB.personaModifiers = normalized[SHEET_MAP.personaModifiers] || [];
-  DB.disclaimers = normalized[SHEET_MAP.disclaimers] || [];
-  DB.icons = normalized[SHEET_MAP.icons] || [];
-  DB.health = normalized[SHEET_MAP.health] || [];
-  DB.settings = normalized[SHEET_MAP.settings] || [];
+  DB.personas = cloneDatabasePayload(normalized[SHEET_MAP.personas] || []);
+  DB.speedOptions = cloneDatabasePayload(normalized[SHEET_MAP.speedOptions] || []);
+  DB.schedules = cloneDatabasePayload(normalized[SHEET_MAP.schedules] || []);
+  DB.modifiers = cloneDatabasePayload(normalized[SHEET_MAP.modifiers] || []);
+  DB.personaModifiers = cloneDatabasePayload(normalized[SHEET_MAP.personaModifiers] || []);
+  DB.disclaimers = cloneDatabasePayload(normalized[SHEET_MAP.disclaimers] || []);
+  DB.icons = cloneDatabasePayload(normalized[SHEET_MAP.icons] || []);
+  DB.health = cloneDatabasePayload(normalized[SHEET_MAP.health] || []);
+  DB.settings = cloneDatabasePayload(normalized[SHEET_MAP.settings] || []);
   DB.sourceFilename = options.filename || (DB.loadedFromWorkbook ? "Uploaded workbook" : "database/persona-db.json");
   DB.lastBuildAt = DB.loadedFromWorkbook ? new Date().toISOString() : databaseSetting("GeneratedOn") || "";
   DB.iconFailures = [];
@@ -729,6 +732,7 @@ function normalizePersonaForSave(input, existingPersona={}, modifiedBy="Persona 
   const now = new Date().toISOString();
   const row = {...existingPersona};
   PERSONA_EDITOR_FIELDS.forEach(field => { row[field] = input[field] ?? ""; });
+  row.PromoIcon = normalizeIconFile(row.PromoIcon);
   row.EquipInc = normalizeBooleanCell(row.EquipInc);
   row.SymSpeed = normalizeBooleanCell(row.SymSpeed);
   row.Fiber = normalizeBooleanCell(row.Fiber);
