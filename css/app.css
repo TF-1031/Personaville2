@@ -298,3 +298,13 @@ body.has-export-cart-tray .content{padding-bottom:110px}
 .change-after{background:var(--green);color:var(--greenText);padding:2px 5px;border-radius:6px}
 
 .publish-package-card{border:1px dashed var(--pv-border);border-radius:12px;background:var(--neutral-soft);padding:14px;margin-top:12px}.health-review-actions{display:flex;gap:12px;align-items:center;margin:0 0 12px;flex-wrap:wrap}
+
+.persona-start-panel{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0 12px;padding:12px;border:1px solid var(--line);border-radius:14px;background:var(--neutral-soft)}
+.persona-editor-row.active{background:var(--pv-purple);border-color:var(--pv-purple);color:var(--pv-white);box-shadow:var(--focus)}
+.persona-editor-row.active span{color:var(--pv-white)}
+.persona-editor-row.active strong{color:var(--pv-white)}
+.persona-editor-row:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(141,59,144,.35),0 0 0 6px rgba(255,255,255,.95)}
+.selected-marker{display:inline-flex;align-items:center;gap:4px;width:max-content;border:1px solid rgba(255,255,255,.75);border-radius:999px;padding:2px 7px;font-size:11px;font-weight:900;color:var(--pv-white)}
+.editor-mode-banner{grid-column:1/-1;border:1px solid var(--line);border-radius:12px;background:var(--neutral-soft);padding:10px;color:var(--pv-charcoal);font-weight:800}
+.more-actions{position:relative}.more-actions summary{list-style:none;cursor:pointer}.more-actions summary::-webkit-details-marker{display:none}.more-actions-menu{position:absolute;z-index:5;right:0;top:calc(100% + 6px);display:grid;gap:8px;min-width:220px;padding:10px;border:1px solid var(--line);border-radius:12px;background:var(--pv-white);box-shadow:var(--shadow)}
+.more-actions-menu .btn{justify-content:flex-start;width:100%}

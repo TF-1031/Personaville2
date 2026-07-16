@@ -16,10 +16,10 @@
         <div class="preview-badge" aria-label="Development Preview">Development Preview</div>
         <div class="sidebar-brand__subtitle">Market persona offer database</div>
       </div>
-      <button class="nav active" data-view="personas" type="button" aria-current="page">Personas</button>
+      <button class="nav active" data-view="personas" type="button" aria-current="page">View Personas</button>
+      <button class="nav" data-view="review" type="button">Data Explorer</button>
       <button class="nav" data-view="export" type="button">Export Cart</button>
-      <button class="nav" data-view="manage" type="button">Manage</button>
-      <button class="nav" data-view="review" type="button">Review Changes</button>
+      <button class="nav" data-view="manage" type="button">Manage Personas</button>
       <button class="nav" data-view="admin" type="button">Admin</button>
     </nav>
 
@@ -158,19 +158,19 @@
         <div class="section-head">
           <div>
             <p class="eyebrow">Personaville Manager</p>
-            <h2 id="manageHeading">Manage Workspace</h2>
+            <h2 id="manageHeading">Manage Personas</h2>
           </div>
           <span id="editingStatus" class="pill ok" aria-live="polite">No unsaved changes</span>
         </div>
         <div class="manage-card manage-card-wide" aria-labelledby="manageHeading">
-          <p class="muted">Safe v2 editing uses an editable working copy. Published data remains unchanged until an exported database is explicitly downloaded and published.</p>
+          <p class="muted">Choose how to manage personas. Existing active records open read-only first; create an updated version when changing active published content.</p>
           <div class="manage-actions">
             <button id="startEditing" class="btn primary" type="button">Start Editing</button>
             <button id="discardWorkingCopy" class="btn" type="button">Discard Working Changes</button>
             <button id="resetWorkingCopy" class="btn" type="button">Reset from Published Database</button>
             <button id="undoEdit" class="btn" type="button">Undo</button>
             <button id="redoEdit" class="btn" type="button">Redo</button>
-            <button class="btn" type="button" onclick="setView('review')">Review Changes</button>
+            <button class="btn" type="button" onclick="setView('review')">Data Explorer</button>
           </div>
           <div id="editingStateSummary" class="kpis dashboard-overview" aria-live="polite"></div>
           <div class="manage-workspace-grid" aria-label="Manage workspace sections">
@@ -178,17 +178,20 @@
               <div class="section-head compact">
                 <div>
                   <h3 id="personaEditorHeading">Persona Editor</h3>
-                  <p class="muted">Create, inspect, edit, duplicate, activate, deactivate, or mark personas for deletion in the working copy.</p>
+                  <p class="muted">Select a starting action. Existing personas open read-only until you choose a safe edit action.</p>
                 </div>
                 <span id="personaEditorCount" class="pill gray">0 personas</span>
               </div>
+              <div id="personaStartPanel" class="persona-start-panel" aria-label="Persona management start actions">
+                <button id="personaCreateNew" class="btn primary" type="button">Create New Persona</button>
+                <button id="personaCreateFromExisting" class="btn" type="button">Create From Existing Persona</button>
+                <button id="personaViewExisting" class="btn" type="button">View Existing Personas</button>
+              </div>
               <div class="persona-editor-toolbar">
                 <input id="personaEditorSearch" class="search" placeholder="Search personas by name, ID, family, pricing, or status" autocomplete="off" />
-                <button id="personaCreateNew" class="btn primary" type="button">New Persona</button>
-                <button id="personaDuplicate" class="btn" type="button">Duplicate</button>
-                <button id="personaActivate" class="btn" type="button">Activate</button>
-                <button id="personaDeactivate" class="btn" type="button">Deactivate</button>
-                <button id="personaMarkDeleted" class="btn" type="button">Mark Deleted</button>
+                <button id="personaCreateUpdatedVersion" class="btn primary" type="button">Create Updated Version</button>
+                <button id="personaDuplicate" class="btn" type="button">Duplicate as New Persona</button>
+                <details id="personaMoreActions" class="more-actions"><summary class="btn">More Actions</summary><div class="more-actions-menu"><button id="personaDeactivate" class="btn" type="button">Deactivate</button><button id="personaMarkDeleted" class="btn danger" type="button">Mark Deleted</button><button id="personaEditAnyway" class="btn" type="button">Edit Active Record Anyway</button></div></details>
               </div>
               <div class="persona-editor-layout">
                 <div id="personaEditorList" class="persona-editor-list" aria-label="Searchable persona list"></div>
@@ -277,12 +280,12 @@
         <div class="section-head">
           <div>
             <p class="eyebrow">Uncommitted working copy</p>
-            <h2 id="reviewHeading">Review Changes</h2>
+            <h2 id="reviewHeading">Data Explorer</h2>
           </div>
           <span id="reviewChangeCount" class="pill gray" aria-live="polite" role="status">0 changes</span>
         </div>
         <div class="manage-card manage-card-wide" aria-labelledby="reviewHeading">
-          <p class="muted">Review the working copy before export. The published database is preserved until you explicitly download and publish the exported JSON.</p>
+          <p class="muted">Review working-copy changes and database records before export. Published data is preserved until you explicitly download and publish the exported JSON.</p>
           <div id="reviewSummary" class="kpis dashboard-overview" aria-live="polite"></div>
           <div class="persona-editor-toolbar">
             <label class="editor-field" for="changeTypeFilter"><span>Filter by record type</span><select id="changeTypeFilter"><option value="all">All record types</option></select></label>
