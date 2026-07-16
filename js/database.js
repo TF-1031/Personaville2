@@ -25,7 +25,8 @@ let EditingSession = {
   baselineSnapshotRaw: null,
   recordStates: {},
   commands: [],
-  commandIndex: -1
+  commandIndex: -1,
+  changeFilter: "all"
 };
 
 const RECORD_ID_FIELDS = ["PersonaID", "SpeedOptionID", "ScheduleID", "ModifierID", "PersonaModifierID", "DisclaimerID", "IconID", "Setting"];
@@ -63,6 +64,106 @@ function snapshotRecordStates(baselineRaw, workingRaw){
   });
   return states;
 }
+
+const CHANGE_SHEET_LABELS = {
+  "05_Personas":"Personas",
+  "06_SpeedOptions":"Speed Options",
+  "07_PricingSchedules":"Pricing Rows",
+  "04_Modifiers":"Modifiers",
+  "10_PersonaModifiers":"Relationships",
+  "08_Disclaimers":"Disclaimers",
+  "09_Icons":"Assets"
+};
+const CHANGE_EDITOR_TARGETS = {
+  "05_Personas":{view:"manage", section:"persona"},
+  "06_SpeedOptions":{view:"manage", section:"speed"},
+  "07_PricingSchedules":{view:"manage", section:"pricing"},
+  "04_Modifiers":{view:"manage", section:"modifier"},
+  "10_PersonaModifiers":{view:"manage", section:"relationships"},
+  "08_Disclaimers":{view:"manage", section:"disclaimer"},
+  "09_Icons":{view:"admin", adminSection:"assets"}
+};
+function valueForChangeDisplay(value){
+  if(value === undefined) return "—";
+  if(value === null) return "null";
+  if(typeof value === "object") return JSON.stringify(value);
+  return String(value) || "(blank)";
+}
+function rowDisplayName(sheet, row, key){
+  if(!row) return key.split(":").slice(2).join(":") || "record";
+  return row.PersonaName || row.SpeedOption || row.ModifierName || row.Title || row.ScheduleID || row.IconName || row.PersonaID || row.SpeedOptionID || row.ModifierID || row.DisclaimerID || row.IconID || row.Setting || key;
+}
+function classifyChange(sheet, field, beforeRow, afterRow, status){
+  if(sheet === SHEET_MAP.personaModifiers) return status === "created" ? "added relationship" : status === "deleted" ? "removed relationship" : "modified relationship";
+  if(["PromoIcon", "IconFile", "FileName"].includes(field) || sheet === SHEET_MAP.icons) return "changed asset assignment";
+  if(status === "created") return "created record";
+  if(status === "deleted") return "deleted record";
+  if(["Status", "Active"].includes(field) && (String(afterRow?.[field] || "").toLowerCase() === "deleted" || String(afterRow?.[field] || "").toLowerCase() === "false")) return "deleted/deactivated record";
+  return "modified field";
+}
+function buildChangeList(beforeRaw, afterRaw){
+  const changes = [];
+  const sheets = new Set([...Object.keys(beforeRaw || {}), ...Object.keys(afterRaw || {})]);
+  sheets.forEach(sheet => {
+    if(sheet === SHEET_MAP.health || sheet === SHEET_MAP.summary) return;
+    const beforeRows = Array.isArray(beforeRaw?.[sheet]) ? beforeRaw[sheet] : [];
+    const afterRows = Array.isArray(afterRaw?.[sheet]) ? afterRaw[sheet] : [];
+    const beforeByKey = new Map(beforeRows.map((row, index) => [sheetRecordKey(sheet, row, index), row]));
+    const afterByKey = new Map(afterRows.map((row, index) => [sheetRecordKey(sheet, row, index), row]));
+    const keys = [...new Set([...beforeByKey.keys(), ...afterByKey.keys()])].sort();
+    keys.forEach(key => {
+      const beforeRow = beforeByKey.get(key), afterRow = afterByKey.get(key);
+      const status = beforeRow ? (afterRow ? "modified" : "deleted") : "created";
+      const fields = status === "modified" ? [...new Set([...Object.keys(beforeRow), ...Object.keys(afterRow)])].filter(f => stableStringify(beforeRow[f]) !== stableStringify(afterRow[f])) : ["Record"];
+      fields.forEach(field => changes.push({
+        id:`${sheet}|${key}|${field}`,
+        sheet,
+        recordType:CHANGE_SHEET_LABELS[sheet] || sheet,
+        recordKey:key,
+        recordName:rowDisplayName(sheet, afterRow || beforeRow, key),
+        field,
+        kind:classifyChange(sheet, field, beforeRow, afterRow, status),
+        before:valueForChangeDisplay(field === "Record" ? beforeRow : beforeRow?.[field]),
+        after:valueForChangeDisplay(field === "Record" ? afterRow : afterRow?.[field]),
+        editorTarget:CHANGE_EDITOR_TARGETS[sheet] || {view:"manage"}
+      }));
+    });
+  });
+  return changes;
+}
+function editingChangeList(){ return buildChangeList(EditingSession.baselineSnapshotRaw || {}, EditingSession.workingRaw || {}); }
+function editingChangeSummary(){
+  const count = sheet => editingChangeList().filter(c => c.sheet === sheet).length;
+  const healthErrors = DB.health.filter(row => ["BAD", "ERROR"].includes(String(row.Status).toUpperCase())).length;
+  const healthWarnings = DB.health.filter(row => String(row.Status).toUpperCase() === "WARN").length;
+  return {personas:count(SHEET_MAP.personas), speedOptions:count(SHEET_MAP.speedOptions), pricingRows:count(SHEET_MAP.schedules), modifiers:count(SHEET_MAP.modifiers), disclaimers:count(SHEET_MAP.disclaimers), assets:count(SHEET_MAP.icons) + editingChangeList().filter(c => c.kind === "changed asset assignment").length, healthErrors, healthWarnings};
+}
+function canUndoEdit(){ return EditingSession.isEditing && EditingSession.commandIndex >= 0; }
+function canRedoEdit(){ return EditingSession.isEditing && EditingSession.commandIndex < EditingSession.commands.length - 1; }
+function applyEditingRaw(raw){
+  EditingSession.workingRaw = cloneDatabasePayload(raw);
+  applyRawDatabase(EditingSession.workingRaw, {source: DB.loadedFromWorkbook ? "workbook" : "bundled", filename: DB.sourceFilename, preservePublished:true});
+  refreshEditingRecordStates();
+}
+function undoLastEdit(){ if(!canUndoEdit()) return false; applyEditingRaw(EditingSession.commands[EditingSession.commandIndex].beforeRaw); EditingSession.commandIndex -= 1; return true; }
+function redoLastEdit(){ if(!canRedoEdit()) return false; EditingSession.commandIndex += 1; applyEditingRaw(EditingSession.commands[EditingSession.commandIndex].afterRaw); return true; }
+function discardUncommittedChange(changeId){
+  const change = editingChangeList().find(c => c.id === changeId);
+  if(!change) return false;
+  const raw = activeDatabaseSnapshot();
+  const baselineRows = Array.isArray(EditingSession.baselineSnapshotRaw?.[change.sheet]) ? EditingSession.baselineSnapshotRaw[change.sheet] : [];
+  const workingRows = Array.isArray(raw?.[change.sheet]) ? raw[change.sheet] : [];
+  const baselineRow = baselineRows.find((row, index) => sheetRecordKey(change.sheet, row, index) === change.recordKey);
+  const index = workingRows.findIndex((row, rowIndex) => sheetRecordKey(change.sheet, row, rowIndex) === change.recordKey);
+  if(change.field !== "Record" && baselineRow && index >= 0) workingRows[index][change.field] = cloneDatabasePayload(baselineRow[change.field]);
+  else if(!baselineRow && index >= 0) workingRows.splice(index, 1);
+  else if(baselineRow && index < 0) workingRows.push(cloneDatabasePayload(baselineRow));
+  else return false;
+  raw[change.sheet] = workingRows;
+  updateWorkingCopy(raw, "discard-change", {sheet:change.sheet, key:change.recordKey, field:change.field});
+  return true;
+}
+
 function databaseState(){
   return DB;
 }

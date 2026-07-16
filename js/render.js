@@ -51,6 +51,7 @@ function renderAll(){
   renderSourceBanner();
   renderPublishPanel();
   renderEditingStatus();
+  renderChangeReview();
   renderPersonaEditor();
   renderSpeedOptionEditor();
   renderPricingScheduleEditor();
@@ -73,6 +74,9 @@ function renderEditingStatus(){
     status.className = `pill ${dirty ? "warn" : "ok"}`;
   }
   const state = document.getElementById("editingStateSummary");
+  const undo = document.getElementById("undoEdit"), redo = document.getElementById("redoEdit");
+  if(undo) undo.disabled = !canUndoEdit();
+  if(redo) redo.disabled = !canRedoEdit();
   if(state){
     const changes = Object.values(editingSessionState().recordStates || {}).reduce((acc, value) => { acc[value] = (acc[value] || 0) + 1; return acc; }, {});
     state.innerHTML = "";
@@ -1334,3 +1338,54 @@ function disclaimerEditorDraft(){ const form=document.getElementById("disclaimer
 function renderDisclaimerPreviewAndUsage(disclaimer){ const preview=document.getElementById("disclaimerPreview"), usage=document.getElementById("disclaimerUsage"); if(preview){preview.innerHTML=""; preview.appendChild(el("h4",{},["Formatted preview"])); preview.appendChild(el("div",{class:"disclaimer"},[disclaimer.DisclaimerText||""]));} if(usage){ const linked=personasUsingDisclaimer(disclaimer.DisclaimerID), missing=missingDisclaimerRelationships(); usage.innerHTML=""; usage.appendChild(el("h4",{},["Linked personas"])); usage.appendChild(linked.length?el("ul",{},linked.map(p=>el("li",{},[`${p.PersonaName||p.PersonaID} (${p.PersonaID})`]))):el("p",{class:"editor-warning"},["No personas link to this disclaimer."])); if(linked.length>1) usage.appendChild(el("p",{class:"editor-warning"},["Warning: this disclaimer is used by multiple personas."])); usage.appendChild(el("h4",{},["Missing disclaimer relationships"])); usage.appendChild(missing.length?el("ul",{},missing.map(p=>el("li",{class:"editor-warning"},[`${p.PersonaName||p.PersonaID} (${p.PersonaID}) has ${p.DisclaimerID||"no DisclaimerID"}`]))):el("p",{class:"muted"},["All personas link to an existing disclaimer."])); } }
 function saveDisclaimerEditor(){ const form=document.getElementById("disclaimerEditorForm"), original=form.dataset.originalDisclaimerId||"", draft=disclaimerEditorDraft(), linked=personasUsingDisclaimer(original); if(original&&linked.length>1&&!confirm(`This disclaimer is used by ${linked.length} personas. Change shared legal copy anyway?`)) return; const validation=validateDisclaimerDraft(draft,original); if(!validation.valid){renderDisclaimerEditorForm(draft,validation.errors); return;} const saved=saveDisclaimerDraft(draft,original); runDatabaseHealth(); editorSelectedDisclaimerID=saved.DisclaimerID; renderAll(); }
 function duplicateDisclaimerEditor(){ if(!editorSelectedDisclaimerID) return; const saved=duplicateDisclaimer(editorSelectedDisclaimerID); runDatabaseHealth(); editorSelectedDisclaimerID=saved.DisclaimerID; renderAll(); }
+
+function renderChangeReview(){
+  const list = document.getElementById("changeList");
+  const summary = document.getElementById("reviewSummary");
+  const countPill = document.getElementById("reviewChangeCount");
+  const filter = document.getElementById("changeTypeFilter");
+  if(!list || !summary || !countPill) return;
+  const changes = editingChangeList();
+  const types = [...new Set(changes.map(c => c.recordType))].sort();
+  if(filter){
+    const current = editingSessionState().changeFilter || "all";
+    filter.innerHTML = "";
+    filter.appendChild(el("option",{value:"all", selected:current === "all"},["All record types"]));
+    types.forEach(type => filter.appendChild(el("option",{value:type, selected:current === type},[type])));
+  }
+  const filtered = changes.filter(change => !filter || filter.value === "all" || change.recordType === filter.value);
+  countPill.textContent = `${changes.length} change${changes.length === 1 ? "" : "s"}`;
+  countPill.setAttribute("aria-label", `${changes.length} uncommitted change${changes.length === 1 ? "" : "s"}`);
+  const review = editingChangeSummary();
+  summary.innerHTML = "";
+  [
+    ["Personas changed", review.personas],
+    ["Speed options changed", review.speedOptions],
+    ["Pricing rows changed", review.pricingRows],
+    ["Modifiers changed", review.modifiers],
+    ["Disclaimers changed", review.disclaimers],
+    ["Assets staged", (typeof AssetManager !== "undefined" ? AssetManager.staged.length : 0) + review.assets],
+    ["Health errors", review.healthErrors],
+    ["Health warnings", review.healthWarnings]
+  ].forEach(([label, value]) => summary.appendChild(el("div",{class:"status-card kpi"},[el("div",{class:"num"},[String(value)]), el("div",{class:"label"},[label])])));
+  list.innerHTML = "";
+  if(!filtered.length){ list.appendChild(emptyState(changes.length ? "No changes match this record type." : "No uncommitted changes yet.")); return; }
+  filtered.forEach(change => list.appendChild(el("article",{class:"change-row"},[
+    el("div",{class:"change-row-head"},[el("strong",{},[`${change.recordType}: ${change.recordName}`]), el("span",{class:"pill gray"},[change.kind])]),
+    el("div",{class:"change-field"},[`${change.field}: `, el("span",{class:"change-before"},[change.before]), " → ", el("span",{class:"change-after"},[change.after])]),
+    el("div",{class:"persona-editor-toolbar"},[
+      el("button",{class:"btn small",type:"button",onclick:()=>jumpToChangeEditor(change)},["Jump to editor"]),
+      el("button",{class:"btn small",type:"button",onclick:()=>{ if(confirm("Discard this uncommitted change?")){ discardUncommittedChange(change.id); runDatabaseHealth(); renderAll(); } }},["Discard change"])
+    ])
+  ])));
+}
+function jumpToChangeEditor(change){
+  const target = change.editorTarget || {};
+  if(change.sheet === SHEET_MAP.personas) editorSelectedPersonaID = (change.recordKey.split(":").pop() || editorSelectedPersonaID);
+  if(change.sheet === SHEET_MAP.speedOptions){ const row = DB.speedOptions.find((r,i)=>sheetRecordKey(SHEET_MAP.speedOptions,r,i)===change.recordKey); if(row){ editorSelectedPersonaID=row.PersonaID; editorSelectedSpeedKey=speedOptionKey(row); } }
+  if(change.sheet === SHEET_MAP.modifiers) editorSelectedModifierID = change.recordKey.split(":").pop() || editorSelectedModifierID;
+  if(change.sheet === SHEET_MAP.disclaimers) editorSelectedDisclaimerID = change.recordKey.split(":").pop() || editorSelectedDisclaimerID;
+  setView(target.view || "manage");
+  if(target.adminSection) setAdminSection(target.adminSection);
+  renderAll();
+}
