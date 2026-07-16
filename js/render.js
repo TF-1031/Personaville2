@@ -88,6 +88,9 @@ function renderEditingStatus(){
 }
 
 let editorSelectedPersonaID = "";
+let personaEditorMode = "start"; // start, view, create-from-existing, edit-anyway
+function isExistingActivePersona(persona){ return String(persona?.Status || "").toLowerCase() === "active"; }
+function personaEditorReadOnly(persona){ return Boolean(persona && persona.PersonaID && isExistingActivePersona(persona) && personaEditorMode !== "edit-anyway"); }
 function personaEditorRows(){
   const q = (document.getElementById("personaEditorSearch")?.value || "").toLowerCase().trim();
   return DB.personas.filter(p => !q || [p.PersonaID,p.PersonaName,p.FamilyGroup,p.PricingSet,p.Status].join(" ").toLowerCase().includes(q));
@@ -102,15 +105,38 @@ function renderPersonaEditor(){
   const form = document.getElementById("personaEditorForm");
   if(!list || !form) return;
   const rows = personaEditorRows();
-  if(!editorSelectedPersonaID && rows[0]) editorSelectedPersonaID = rows[0].PersonaID;
   list.innerHTML = "";
-  rows.forEach(p => list.appendChild(el("button",{class:`persona-editor-row${p.PersonaID===editorSelectedPersonaID?" active":""}${personaEditorStateClass(p)}`, type:"button", onclick:()=>{editorSelectedPersonaID=p.PersonaID; renderPersonaEditor();}},[
+  rows.forEach(p => list.appendChild(el("button",{class:`persona-editor-row${p.PersonaID===editorSelectedPersonaID?" active":""}${personaEditorStateClass(p)}`, type:"button", "aria-pressed":String(p.PersonaID===editorSelectedPersonaID), onclick:()=>{editorSelectedPersonaID=p.PersonaID; personaEditorMode = personaEditorMode === "create-from-existing" ? "create-from-existing" : "view"; renderPersonaEditor();}},[
+    p.PersonaID===editorSelectedPersonaID ? el("span",{class:"selected-marker", "aria-hidden":"true"},["✓ Selected"]) : null,
     el("strong",{},[p.PersonaName || "Untitled"]),
     el("span",{},[`${p.PersonaID || "No ID"} • ${p.Status || "No status"}`])
   ])));
   document.getElementById("personaEditorCount").textContent = `${rows.length} persona${rows.length===1?"":"s"}`;
-  renderPersonaEditorForm(DB.personas.find(p => p.PersonaID === editorSelectedPersonaID) || null);
+  updatePersonaEditorActionState();
+  if(personaEditorMode === "start") renderPersonaStartPanel();
+  else renderPersonaEditorForm(DB.personas.find(p => p.PersonaID === editorSelectedPersonaID) || null);
 }
+
+function updatePersonaEditorActionState(){
+  const selected = DB.personas.find(p => p.PersonaID === editorSelectedPersonaID);
+  const hasSelection = Boolean(selected);
+  ["personaCreateUpdatedVersion", "personaDuplicate", "personaDeactivate", "personaMarkDeleted", "personaEditAnyway"].forEach(id => { const node = document.getElementById(id); if(node) node.disabled = !hasSelection; });
+  const editAnyway = document.getElementById("personaEditAnyway");
+  if(editAnyway) editAnyway.disabled = !hasSelection || !isExistingActivePersona(selected);
+}
+function renderPersonaStartPanel(){
+  const form = document.getElementById("personaEditorForm");
+  form.innerHTML = "";
+  form.dataset.originalPersonaId = "";
+  form.appendChild(emptyState("Choose a persona management action.", "Create a blank draft, create from an existing persona, or view existing personas read-only first."));
+  updatePersonaEditorSaveState("Saved");
+  const save = document.getElementById("personaEditorSave");
+  if(save) save.disabled = true;
+  renderSpeedOptionEditor();
+  renderPersonaModifierEditor();
+}
+function startPersonaViewExisting(){ personaEditorMode = "view"; editorSelectedPersonaID = ""; renderPersonaEditor(); }
+function startPersonaCreateFromExisting(){ personaEditorMode = "create-from-existing"; editorSelectedPersonaID = ""; renderPersonaEditor(); }
 const PERSONA_FIELD_LABELS = {
   PersonaID: "Persona ID",
   PersonaName: "Persona Name",
@@ -198,7 +224,7 @@ function personaFieldWrapper(name, input, errors={}){
     errors[name] ? el("em",{},[errors[name]]) : null
   ]);
 }
-function editorField(name, value, errors={}){
+function editorField(name, value, errors={}, readonlyForm=false){
   const id = `personaEdit-${name}`;
   if(name === "FamilyGroup" || name === "PricingSet") return personaChoiceField(name, value, errors);
   if(name === "PromoIcon") return personaFieldWrapper(name, el("div",{id:"promotionIconPicker", class:"promotion-icon-picker"},[]), errors);
@@ -218,8 +244,8 @@ function editorField(name, value, errors={}){
     ]), errors);
   }
   const input = ["Notes"].includes(name) ? el("textarea",{id, name, rows:"3"},[value || ""]) :
-    ["EquipInc","SymSpeed","Fiber"].includes(name) ? el("input",{id, name, type:"checkbox", value:"TRUE", checked:truthy(value)}) :
-    el("input",{id, name, value:value ?? "", readonly});
+    ["EquipInc","SymSpeed","Fiber"].includes(name) ? el("input",{id, name, type:"checkbox", value:"TRUE", checked:truthy(value), disabled:readonlyForm}) :
+    el("input",{id, name, value:value ?? "", readonly: readonly || readonlyForm});
   return personaFieldWrapper(name, input, errors);
 }
 
@@ -314,22 +340,31 @@ function updatePersonaEditorSaveState(text){
 function renderPersonaEditorForm(persona, errors={}){
   const form = document.getElementById("personaEditorForm");
   form.innerHTML = "";
-  if(!persona){ form.appendChild(emptyState("Select or create a persona.")); return; }
+  if(!persona){ form.appendChild(emptyState(personaEditorMode === "create-from-existing" ? "Choose a source persona to duplicate." : "Select a persona to view it read-only.")); return; }
+  if(personaEditorMode === "create-from-existing"){ duplicateSelectedPersonaEditor(); return; }
+  const readonlyForm = personaEditorReadOnly(persona);
   const counts = personaRelationships(persona.PersonaID);
   form.dataset.originalPersonaId = persona.PersonaID || "";
-  form.appendChild(el("div",{class:"editor-related-counts"},[
-    el("span",{},[`Speeds: ${counts.speeds}`]), el("span",{},[`Modifiers: ${counts.modifiers}`]), el("span",{},[`Disclaimer links: ${counts.disclaimers}`])
-  ]));
+  if(editorSelectedPersonaID){
+    form.appendChild(el("div",{class:"editor-mode-banner"},[readonlyForm ? "Read-only active record. Create an updated version before changing published content." : "Editable draft or explicitly unlocked record."]));
+    form.appendChild(el("div",{class:"editor-related-counts"},[
+      el("span",{},[`Speeds: ${counts.speeds}`]), el("span",{},[`Modifiers: ${counts.modifiers}`]), el("span",{},[`Disclaimer links: ${counts.disclaimers}`])
+    ]));
+  }
   PERSONA_EDITOR_SECTIONS.forEach(section => {
     const sectionNode = el("fieldset",{class:"persona-editor-section"},[
       el("legend",{},[section.title])
     ]);
-    section.fields.forEach(field => sectionNode.appendChild(editorField(field, persona[field], errors)));
+    section.fields.forEach(field => sectionNode.appendChild(editorField(field, persona[field], errors, readonlyForm)));
     form.appendChild(sectionNode);
   });
   form.addEventListener("input", () => updatePersonaEditorSaveState("Unsaved Changes"), {once:true});
   form.addEventListener("change", () => updatePersonaEditorSaveState("Unsaved Changes"), {once:true});
+  if(readonlyForm){ form.querySelectorAll("select, textarea, button").forEach(node => { if(node.type !== "hidden") node.disabled = true; }); }
   renderPromotionIconField(persona.PromoIcon);
+  if(readonlyForm){ document.getElementById("promotionIconPicker")?.querySelectorAll("button").forEach(node => node.disabled = true); }
+  const save = document.getElementById("personaEditorSave");
+  if(save) save.disabled = readonlyForm;
   updatePersonaEditorSaveState();
   renderSpeedOptionEditor();
   renderPersonaModifierEditor();
@@ -346,6 +381,8 @@ function personaEditorDraft(){
 function savePersonaEditor(){
   const form = document.getElementById("personaEditorForm");
   const original = form.dataset.originalPersonaId || "";
+  const current = DB.personas.find(p => p.PersonaID === original);
+  if(personaEditorReadOnly(current)){ alert("Active records are read-only by default. Create an updated version, or use More Actions > Edit Active Record Anyway after confirming the warning."); return; }
   const draft = personaEditorDraft();
   if(original && draft.PersonaID !== original && personaHasRelationships(original) && !window.confirm("This PersonaID has speed, modifier, or disclaimer relationships. Change it anyway?")) return;
   const validation = validatePersonaDraft(draft, original);
@@ -360,6 +397,7 @@ function savePersonaEditor(){
 function createNewPersonaEditor(){
   startEditingSession();
   const id = nextSafePersonaID();
+  personaEditorMode = "edit-anyway";
   editorSelectedPersonaID = id;
   renderPersonaEditorForm({PersonaID:id, Status:"Draft", EquipInc:"FALSE", SymSpeed:"FALSE", Fiber:"FALSE"});
 }
@@ -368,7 +406,16 @@ function duplicateSelectedPersonaEditor(){
   const saved = duplicatePersona(editorSelectedPersonaID, "Browser Persona Editor");
   runDatabaseHealth();
   editorSelectedPersonaID = saved.PersonaID;
+  personaEditorMode = "edit-anyway";
   renderAll();
+}
+function createUpdatedVersionPersonaEditor(){ duplicateSelectedPersonaEditor(); }
+function editActivePersonaAnyway(){
+  const selected = DB.personas.find(p => p.PersonaID === editorSelectedPersonaID);
+  if(!selected || !isExistingActivePersona(selected)) return;
+  if(!window.confirm("Editing an active record directly can change published content. Creating an updated version is recommended. Edit the active record anyway?")) return;
+  personaEditorMode = "edit-anyway";
+  renderPersonaEditor();
 }
 function statusSelectedPersonaEditor(status){
   if(!editorSelectedPersonaID) return;

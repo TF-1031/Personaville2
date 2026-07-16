@@ -164,10 +164,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("changeTypeFilter")?.addEventListener("change", event => { editingSessionState().changeFilter = event.target.value; renderChangeReview(); });
   document.getElementById("personaEditorSearch")?.addEventListener("input", renderPersonaEditor);
   document.getElementById("personaCreateNew")?.addEventListener("click", createNewPersonaEditor);
+  document.getElementById("personaCreateFromExisting")?.addEventListener("click", startPersonaCreateFromExisting);
+  document.getElementById("personaViewExisting")?.addEventListener("click", startPersonaViewExisting);
+  document.getElementById("personaCreateUpdatedVersion")?.addEventListener("click", createUpdatedVersionPersonaEditor);
   document.getElementById("personaDuplicate")?.addEventListener("click", duplicateSelectedPersonaEditor);
   document.getElementById("personaActivate")?.addEventListener("click", () => statusSelectedPersonaEditor("Active"));
   document.getElementById("personaDeactivate")?.addEventListener("click", () => statusSelectedPersonaEditor("Inactive"));
   document.getElementById("personaMarkDeleted")?.addEventListener("click", deleteSelectedPersonaEditor);
+  document.getElementById("personaEditAnyway")?.addEventListener("click", editActivePersonaAnyway);
   document.getElementById("personaEditorSave")?.addEventListener("click", savePersonaEditor);
   document.getElementById("speedOptionCreateNew")?.addEventListener("click", createSpeedOptionEditor);
   document.getElementById("speedOptionDuplicate")?.addEventListener("click", duplicateSelectedSpeedOptionEditor);
