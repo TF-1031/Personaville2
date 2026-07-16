@@ -134,6 +134,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("globalSearch").addEventListener("input", renderTiles);
   document.getElementById("familyFilter").addEventListener("change", renderTiles);
   document.getElementById("pricingFilter").addEventListener("change", renderTiles);
+  document.getElementById("lifecycleFilter")?.addEventListener("change", renderTiles);
   document.getElementById("clearSelection").addEventListener("click", resetPersonaDetail);
   document.getElementById("clearFilters").addEventListener("click", clearPersonaFilters);
   document.getElementById("clearFamilyGroup").addEventListener("click", clearFamilyGroupFilter);

@@ -40,6 +40,17 @@
               <p id="searchHelp" class="filter-help">Searches persona name, displayed speed, modifier, and Reference ID.</p>
             </div>
             <fieldset class="filter-control filter-fieldset">
+              <legend>Lifecycle</legend>
+              <select id="lifecycleFilter" aria-label="Lifecycle status">
+                <option value="Active" selected>Active now</option>
+                <option value="Scheduled">Scheduled</option>
+                <option value="Draft">Draft</option>
+                <option value="Expired">Expired</option>
+                <option value="Inactive">Inactive</option>
+                <option value="all">All statuses</option>
+              </select>
+            </fieldset>
+            <fieldset class="filter-control filter-fieldset">
               <legend>Pricing Set</legend>
               <div id="pricingFilter" class="choice-group segmented" role="radiogroup" aria-label="Pricing Set"></div>
             </fieldset>
