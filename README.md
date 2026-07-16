@@ -15,8 +15,15 @@ Stable v1 site: https://tf-1031.github.io/Personaville-test/
 - This repository is the v2 development preview only.
 - The stable v1 `Personaville-test` repository and site should remain unchanged.
 - Existing v1 functionality is retained here as the starting point: database import, validation, Personas, Export Cart, Admin, hero image, audio player, and publishing workflow.
-- No v2 editing features are implemented in this baseline preview setup.
+- v2 editing, undo/redo, change review, and publishing-package workflows are staged for release-candidate validation in this preview setup.
 - If this repository was created by cloning the stable v1 repository, it can preserve the full Git history. If it was created from an exported file copy instead, this preview begins from the v1.0/v1.1 baseline represented by this initial commit.
+
+
+## v2 release-candidate preparation
+
+Personaville v2 is now staged for release-candidate testing in this preview repository only. The stable v1 site must remain unchanged during RC validation. See [MIGRATION.md](MIGRATION.md) for the production v1 import procedure, data-loss checks, RC validation checklist, and rollback-to-v1 plan. See [RELEASE_NOTES_v2_RC.md](RELEASE_NOTES_v2_RC.md) for the current release-notes draft.
+
+RC validation must include record-count comparison, representative pricing schedule comparison, modifier/disclaimer comparison, asset-path validation, full Database Health, read-only browsing, all editors, undo/redo, publishing package generation, Export Cart printing, and desktop/tablet/mobile review.
 
 ## Quick start
 
