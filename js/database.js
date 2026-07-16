@@ -14,7 +14,10 @@ let DB = {
   loadedFromWorkbook: false,
   sourceFilename: "",
   lastBuildAt: "",
-  downloadableRaw: null
+  downloadableRaw: null,
+  sourceWorkbookFile: null,
+  sourceWorkbookBytes: null,
+  healthReviewedAt: ""
 };
 
 let EditingSession = {
@@ -373,6 +376,8 @@ function applyRawDatabase(raw, options={}){
   DB.sourceFilename = options.filename || (DB.loadedFromWorkbook ? "Uploaded workbook" : "database/persona-db.json");
   DB.lastBuildAt = DB.loadedFromWorkbook ? new Date().toISOString() : databaseSetting("GeneratedOn") || "";
   DB.iconFailures = [];
+  DB.healthReviewedAt = "";
+  if(options.source !== "workbook"){ DB.sourceWorkbookFile = null; DB.sourceWorkbookBytes = null; }
   enhanceDatabase();
 }
 async function loadWorkbookFile(file){
@@ -384,6 +389,8 @@ async function loadWorkbookFile(file){
     raw[name] = rowsFromSheet(workbook.Sheets[name]);
   });
   applyRawDatabase(raw, {source:"workbook", filename:file?.name || "Uploaded workbook"});
+  DB.sourceWorkbookFile = file || null;
+  DB.sourceWorkbookBytes = buffer;
 }
 function databaseSetting(name){
   const row = (DB.settings || []).find(item => String(item.Setting || "").toLowerCase() === String(name || "").toLowerCase());
@@ -413,6 +420,161 @@ function updatedDatabaseJson(){
 }
 function hasBlockingHealthErrors(){
   return currentBuildSummary().healthErrors > 0;
+}
+
+function markDatabaseHealthReviewed(){
+  DB.healthReviewedAt = new Date().toISOString();
+  return DB.healthReviewedAt;
+}
+function databaseHealthReviewed(){
+  return Boolean(DB.healthReviewedAt);
+}
+function healthStatusCounts(rows=buildHealth()){
+  return rows.reduce((counts, row) => {
+    const status = String(row.Status || "").trim().toUpperCase() || "UNKNOWN";
+    counts[status] = (counts[status] || 0) + 1;
+    return counts;
+  }, {});
+}
+function publishingPackageFilename(date=new Date()){
+  const pad = n => String(n).padStart(2, "0");
+  return `Personaville-v2-Publish-${date.getFullYear()}${pad(date.getMonth()+1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}.zip`;
+}
+function publishingDatabaseVersion(){
+  return databaseSetting("Version") || databaseSetting("DatabaseVersion") || databaseSetting("GeneratedOn") || DB.sourceFilename || "unknown";
+}
+function publishingHealthReport(rows=buildHealth()){
+  return {reviewedAt:DB.healthReviewedAt || "Not reviewed", counts:healthStatusCounts(rows), rows};
+}
+function publishingChangeSummary(){
+  const changes = editingChangeList();
+  const summary = editingChangeSummary();
+  return {summary, changes};
+}
+function publishingReleaseNotesDraft(){
+  const generated = new Date().toISOString();
+  const changeData = publishingChangeSummary();
+  return [
+    `# Personaville v2 Release Notes Draft`,
+    ``,
+    `Generated: ${generated}`,
+    `Source database version: ${publishingDatabaseVersion()}`,
+    ``,
+    `## Summary`,
+    `- Personas changed: ${changeData.summary.personas}`,
+    `- Speed options changed: ${changeData.summary.speedOptions}`,
+    `- Pricing rows changed: ${changeData.summary.pricingRows}`,
+    `- Modifiers changed: ${changeData.summary.modifiers}`,
+    `- Disclaimers changed: ${changeData.summary.disclaimers}`,
+    `- Asset-related changes: ${changeData.summary.assets}`,
+    ``,
+    `## Health`,
+    `- Errors/BAD results: ${changeData.summary.healthErrors}`,
+    `- Warnings: ${changeData.summary.healthWarnings}`,
+    ``,
+    `## Reviewer notes`,
+    `- Review this package before committing it to GitHub.`,
+    `- Do not modify the published site directly.`
+  ].join("\n") + "\n";
+}
+function publishingInstructions(){
+  return [
+    `# Publishing Instructions`,
+    ``,
+    `1. Review Database Health and resolve BAD/Error rows unless this package was intentionally generated with override.`,
+    `2. Unzip this package locally.`,
+    `3. Review all files, especially database/persona-db.json, reports/health-report.json, reports/change-summary.json, and reports/release-notes-draft.md.`,
+    `4. Copy the included database/ and assets/ files into the repository preserving paths.`,
+    `5. Commit the reviewed package contents to GitHub. GitHub Pages publishes from GitHub; never modify the published site directly.`,
+    `6. Keep release notes with the GitHub commit or PR as appropriate.`
+  ].join("\n") + "\n";
+}
+
+function updatedWorkbookBytes(){
+  if(typeof XLSX === "undefined" || !XLSX?.utils || !XLSX?.write) return null;
+  const workbook = XLSX.utils.book_new();
+  const raw = activeDatabaseSnapshot();
+  Object.keys(raw || {}).forEach(sheetName => {
+    const rows = Array.isArray(raw[sheetName]) ? raw[sheetName] : [];
+    const sheet = XLSX.utils.json_to_sheet(rows);
+    XLSX.utils.book_append_sheet(workbook, sheet, sheetName.slice(0, 31));
+  });
+  return new Uint8Array(XLSX.write(workbook, {bookType:"xlsx", type:"array"}));
+}
+function dataUrlToBytes(dataUrl){
+  const text = String(dataUrl || "");
+  const comma = text.indexOf(",");
+  const payload = comma >= 0 ? text.slice(comma + 1) : text;
+  if(typeof Buffer !== "undefined") return new Uint8Array(Buffer.from(payload, "base64"));
+  const binary = atob(payload);
+  return Uint8Array.from(binary, ch => ch.charCodeAt(0));
+}
+function textBytes(text){ return new TextEncoder().encode(String(text)); }
+function crc32(bytes){
+  let crc = -1;
+  for(const byte of bytes){
+    crc ^= byte;
+    for(let i=0;i<8;i++) crc = (crc >>> 1) ^ (0xEDB88320 & -(crc & 1));
+  }
+  return (crc ^ -1) >>> 0;
+}
+function dosDateTime(date=new Date()){
+  const time = (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds()/2);
+  const day = ((date.getFullYear()-1980) << 9) | ((date.getMonth()+1) << 5) | date.getDate();
+  return {time, day};
+}
+function writeU16(out, n){ out.push(n & 255, (n >>> 8) & 255); }
+function writeU32(out, n){ out.push(n & 255, (n >>> 8) & 255, (n >>> 16) & 255, (n >>> 24) & 255); }
+function makeZip(files){
+  const now = dosDateTime();
+  const local = [], central = []; let offset = 0;
+  files.forEach(file => {
+    const name = textBytes(file.path); const bytes = file.bytes instanceof Uint8Array ? file.bytes : textBytes(file.bytes || ""); const crc = crc32(bytes);
+    const header = []; writeU32(header,0x04034b50); writeU16(header,20); writeU16(header,0); writeU16(header,0); writeU16(header,now.time); writeU16(header,now.day); writeU32(header,crc); writeU32(header,bytes.length); writeU32(header,bytes.length); writeU16(header,name.length); writeU16(header,0);
+    local.push(Uint8Array.from(header), name, bytes);
+    const c = []; writeU32(c,0x02014b50); writeU16(c,20); writeU16(c,20); writeU16(c,0); writeU16(c,0); writeU16(c,now.time); writeU16(c,now.day); writeU32(c,crc); writeU32(c,bytes.length); writeU32(c,bytes.length); writeU16(c,name.length); writeU16(c,0); writeU16(c,0); writeU16(c,0); writeU16(c,0); writeU32(c,0); writeU32(c,offset); central.push(Uint8Array.from(c), name);
+    offset += header.length + name.length + bytes.length;
+  });
+  const centralSize = central.reduce((n,b)=>n+b.length,0); const end=[]; writeU32(end,0x06054b50); writeU16(end,0); writeU16(end,0); writeU16(end,files.length); writeU16(end,files.length); writeU32(end,centralSize); writeU32(end,offset); writeU16(end,0);
+  return new Blob([...local, ...central, Uint8Array.from(end)], {type:"application/zip"});
+}
+function publishingPackageFiles(options={}){
+  const rows = buildHealth();
+  if(!databaseHealthReviewed()) throw new Error("Review Database Health before creating a publishing package.");
+  const counts = healthStatusCounts(rows);
+  const blocking = (counts.BAD || 0) + (counts.ERROR || 0) + (counts.FAIL || 0);
+  if(blocking && !options.overrideHealthErrors) throw new Error("Database Health contains BAD/Error results. Resolve them or explicitly override.");
+  const generatedAt = new Date().toISOString();
+  const files = [];
+  const addText = (path, text) => files.push({path, bytes:textBytes(text)});
+  addText("database/persona-db.json", updatedDatabaseJson());
+  const workbookBytes = updatedWorkbookBytes();
+  if(workbookBytes) files.push({path:"database/persona-db.xlsx", bytes:workbookBytes});
+  (typeof AssetManager !== "undefined" ? AssetManager.staged : []).forEach(asset => files.push({path:asset.path, bytes:dataUrlToBytes(asset.dataUrl)}));
+  addText("reports/change-summary.json", JSON.stringify(publishingChangeSummary(), null, 2) + "\n");
+  addText("reports/health-report.json", JSON.stringify(publishingHealthReport(rows), null, 2) + "\n");
+  addText("reports/release-notes-draft.md", publishingReleaseNotesDraft());
+  addText("reports/publishing-instructions.md", publishingInstructions());
+  const manifest = {generatedAt, sourceDatabaseVersion:publishingDatabaseVersion(), sourceFilename:DB.sourceFilename, healthReviewedAt:DB.healthReviewedAt, overrideHealthErrors:Boolean(options.overrideHealthErrors), counts:{files:0, stagedAssets:(typeof AssetManager !== "undefined" ? AssetManager.staged.length : 0), health:counts}, files:[]};
+  manifest.files = files.map(file => ({path:file.path, bytes:file.bytes.length, sha256:"pending"}));
+  manifest.counts.files = files.length + 1;
+  addText("reports/manifest.json", JSON.stringify(manifest, null, 2) + "\n");
+  return files;
+}
+async function finalizePublishingManifest(files){
+  const manifestFile = files.find(f => f.path === "reports/manifest.json"); if(!manifestFile || typeof crypto === "undefined" || !crypto.subtle) return files;
+  const manifest = JSON.parse(new TextDecoder().decode(manifestFile.bytes));
+  for(const entry of manifest.files){
+    const file = files.find(f => f.path === entry.path);
+    const hash = await crypto.subtle.digest("SHA-256", file.bytes);
+    entry.sha256 = [...new Uint8Array(hash)].map(b=>b.toString(16).padStart(2,"0")).join("");
+  }
+  manifestFile.bytes = textBytes(JSON.stringify(manifest, null, 2) + "\n");
+  return files;
+}
+async function publishingPackageBlob(options={}){
+  const files = await finalizePublishingManifest(publishingPackageFiles(options));
+  return makeZip(files);
 }
 function pricingRowIdentity(row){
   return [

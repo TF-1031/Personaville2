@@ -296,3 +296,5 @@ body.has-export-cart-tray .content{padding-bottom:110px}
 .change-field{font-size:13px;overflow-wrap:anywhere}
 .change-before{background:var(--red);color:var(--redText);padding:2px 5px;border-radius:6px}
 .change-after{background:var(--green);color:var(--greenText);padding:2px 5px;border-radius:6px}
+
+.publish-package-card{border:1px dashed var(--pv-border);border-radius:12px;background:var(--neutral-soft);padding:14px;margin-top:12px}.health-review-actions{display:flex;gap:12px;align-items:center;margin:0 0 12px;flex-wrap:wrap}

@@ -121,6 +121,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
   document.getElementById("downloadUpdatedJson").addEventListener("click", downloadUpdatedJson);
+  document.getElementById("downloadPublishingPackage")?.addEventListener("click", downloadPublishingPackage);
   document.getElementById("loadBundled").addEventListener("click", async ()=>{
     if(!warnIfUnsavedChanges("Loading the published database will discard unsaved working-copy changes. Continue?")) return;
     try{
@@ -227,6 +228,39 @@ function downloadUpdatedJson(){
     URL.revokeObjectURL(url);
     const instructions = document.getElementById("downloadInstructions");
     if(instructions) instructions.hidden = false;
+    if(typeof markWorkingCopyDownloaded === "function") markWorkingCopyDownloaded();
+    renderAll();
+  }catch(err){
+    alert(err.message);
+  }
+}
+
+async function downloadPublishingPackage(){
+  try{
+    if(!databaseHealthReviewed()){
+      alert("Review Database Health before creating a v2 publishing package. Open Admin > Database Health, inspect results, then click Mark Health Reviewed.");
+      setView("admin");
+      setAdminSection("health", {focus:true});
+      return;
+    }
+    const summary = currentBuildSummary();
+    let overrideHealthErrors = false;
+    if(summary.healthErrors){
+      overrideHealthErrors = window.confirm(`Database Health contains ${summary.healthErrors} BAD/Error result(s). Normal publication is blocked. Create an override package anyway?`);
+      if(!overrideHealthErrors) return;
+    }else if(summary.healthWarnings){
+      if(!window.confirm(`Database Health contains ${summary.healthWarnings} warning(s). Continue packaging?`)) return;
+    }
+    const blob = await publishingPackageBlob({overrideHealthErrors});
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.href = url;
+    link.download = publishingPackageFilename();
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    alert("Review the downloaded package, then commit the included database, assets, reports, and release notes to GitHub. Never modify the published site directly.");
     if(typeof markWorkingCopyDownloaded === "function") markWorkingCopyDownloaded();
     renderAll();
   }catch(err){

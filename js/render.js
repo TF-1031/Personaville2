@@ -643,8 +643,8 @@ function renderPublishPanel(){
   const steps = [
     ["Upload Workbook", DB.loadedFromWorkbook],
     ["Load workbook into browser memory", DB.loadedFromWorkbook],
-    ["Review Database Health", built],
-    ["Download Updated JSON", downloaded],
+    ["Review Database Health", databaseHealthReviewed()],
+    ["Download v2 Publishing Package", downloaded],
     ["Replace database/persona-db.json in GitHub", downloaded],
     ["GitHub Pages publishes automatically", downloaded]
   ];
@@ -983,6 +983,10 @@ function renderHealth(){
     box.appendChild(emptyState("No health checks are available.", "Load the published database or upload a workbook to review database health."));
     return;
   }
+  box.appendChild(el("div",{class:"health-review-actions"},[
+    el("button",{class:"btn primary",type:"button",onclick:()=>{ markDatabaseHealthReviewed(); renderAll(); }},["Mark Health Reviewed"]),
+    el("span",{class:"muted"},[DB.healthReviewedAt ? `Reviewed ${new Date(DB.healthReviewedAt).toLocaleString()}` : "Required before v2 package download"])
+  ]));
   rows.forEach((h, index) => {
     const st = String(h.Status||"").toUpperCase();
     const failed = st && st !== "OK";
