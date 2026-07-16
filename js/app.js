@@ -15,6 +15,41 @@ function runExportAction(action){
   action();
 }
 
+
+function statusForHealthExport(kind, message){
+  const ids = kind === "review" ? ["reviewHealthExportStatus"] : kind === "admin" ? ["adminHealthExportStatus"] : ["reviewHealthExportStatus", "adminHealthExportStatus"];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.textContent = message;
+  });
+}
+function downloadHealthExport(kind, source="all"){
+  try{
+    const payload = healthExportPayload(kind);
+    const labels = {report:"Health Report", warnings:"Warnings Only", errors:"Errors Only"};
+    if(kind !== "log" && payload.count === 0){
+      statusForHealthExport(source, `No ${labels[kind] || "health"} findings found in the live working copy.`);
+      return;
+    }
+    const blob = new Blob([payload.text], {type:payload.type});
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.href = url;
+    link.download = payload.filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    statusForHealthExport(source, `Downloaded ${payload.filename}`);
+  }catch(err){
+    alert(err.message);
+  }
+}
+function runHealthExportAction(kind, source){
+  if(typeof playExportSound === "function") playExportSound();
+  downloadHealthExport(kind, source);
+}
+
 function warnIfUnsavedChanges(message){
   if(typeof editingHasUnsavedChanges !== "function" || !editingHasUnsavedChanges()) return true;
   return window.confirm(message || "You have unsaved working-copy changes. Continue and lose those changes?");
@@ -145,6 +180,14 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("savePdf").addEventListener("click", () => runExportAction(printCombinedExportPdf));
   document.getElementById("downloadSummary").addEventListener("click", () => runExportAction(downloadSelectedSummary));
   document.getElementById("copySummary").addEventListener("click", () => runExportAction(copySelectedSummary));
+  document.getElementById("reviewExportHealthReport")?.addEventListener("click", () => runHealthExportAction("report", "review"));
+  document.getElementById("reviewExportHealthWarnings")?.addEventListener("click", () => runHealthExportAction("warnings", "review"));
+  document.getElementById("reviewExportHealthErrors")?.addEventListener("click", () => runHealthExportAction("errors", "review"));
+  document.getElementById("reviewDownloadHealthLog")?.addEventListener("click", () => runHealthExportAction("log", "review"));
+  document.getElementById("adminExportHealthReport")?.addEventListener("click", () => runHealthExportAction("report", "admin"));
+  document.getElementById("adminExportHealthWarnings")?.addEventListener("click", () => runHealthExportAction("warnings", "admin"));
+  document.getElementById("adminExportHealthErrors")?.addEventListener("click", () => runHealthExportAction("errors", "admin"));
+  document.getElementById("adminDownloadHealthLog")?.addEventListener("click", () => runHealthExportAction("log", "admin"));
   window.addEventListener("beforeprint", fitPrintCardsToLetter);
   document.getElementById("startEditing")?.addEventListener("click", () => {
     startEditingSession();
