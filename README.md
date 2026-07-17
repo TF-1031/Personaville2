@@ -70,11 +70,12 @@ The shared header is loaded once from `components/header.html` into `#personavil
 
 1. Go to **Personas**.
 2. Apply at least one search or filter to display persona tiles.
-3. Check **Add to Export Cart** on individual tiles, or use **Select All Visible** from Export Cart for the current filtered result set.
-4. The sticky Export Cart tray appears when one or more personas are selected.
-5. Open **Export Cart** to review order and remove unwanted personas.
-6. Use **Print All** or **Download / Save as PDF**. Both open the browser print dialog; choose a PDF destination when supported.
-7. Use **Copy Summary** to copy selected persona names for quick sharing.
+3. Check **Add to Export Cart** on individual tiles, or use the compact bulk-selection toolbar on **Personas** to **Select All**, **Deselect All**, **Select Visible**, or **Deselect Visible**. Visible-only actions follow the current search, lifecycle, Pricing Set, Family Group, and other View Personas filters.
+4. Use the toolbar count, **View Cart**, and **Clear Cart** controls to monitor or reset the shared Export Cart without leaving the filtered results.
+5. The sticky Export Cart tray appears when one or more personas are selected.
+6. Open **Export Cart** to review order and remove unwanted personas.
+7. Use **Print All** or **Download / Save as PDF**. Both open the browser print dialog; choose a PDF destination when supported.
+8. Use **Copy Summary** to copy selected persona names for quick sharing.
 
 When no personas are selected, Export Cart displays an empty state and keeps a single-persona preview available once data is loaded.
 

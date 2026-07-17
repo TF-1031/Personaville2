@@ -176,6 +176,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("exportPersona").addEventListener("change", renderPrintArea);
   document.getElementById("selectAllVisible").addEventListener("click", selectAllVisiblePersonas);
   document.getElementById("clearExportSelection").addEventListener("click", clearExportSelection);
+  document.getElementById("selectAllPersonas")?.addEventListener("click", selectAllPersonas);
+  document.getElementById("deselectAllPersonas")?.addEventListener("click", deselectAllPersonas);
+  document.getElementById("selectVisiblePersonas")?.addEventListener("click", selectAllVisiblePersonas);
+  document.getElementById("deselectVisiblePersonas")?.addEventListener("click", deselectVisiblePersonas);
+  document.getElementById("viewExportCart")?.addEventListener("click", () => setView("export"));
+  document.getElementById("clearPersonaCart")?.addEventListener("click", clearExportSelection);
   document.getElementById("printPersona").addEventListener("click", () => runExportAction(printCombinedExportPdf));
   document.getElementById("savePdf").addEventListener("click", () => runExportAction(printCombinedExportPdf));
   document.getElementById("downloadSummary").addEventListener("click", () => runExportAction(downloadSelectedSummary));

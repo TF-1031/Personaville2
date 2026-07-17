@@ -67,6 +67,15 @@
               <h3 id="personaResultsHeading">Results</h3>
               <span id="personaResultCount" class="pill gray" aria-live="polite">0 personas found</span>
             </div>
+            <div class="bulk-selection-toolbar" aria-label="Bulk Export Cart actions">
+              <button id="selectAllPersonas" class="btn small" type="button">Select All</button>
+              <button id="deselectAllPersonas" class="btn small" type="button">Deselect All</button>
+              <button id="selectVisiblePersonas" class="btn small" type="button">Select Visible</button>
+              <button id="deselectVisiblePersonas" class="btn small" type="button">Deselect Visible</button>
+              <span id="personaSelectionCount" class="bulk-selection-count" aria-live="polite">0 selected</span>
+              <button id="viewExportCart" class="btn small" type="button">View Cart</button>
+              <button id="clearPersonaCart" class="btn small" type="button">Clear Cart</button>
+            </div>
             <div id="personaTiles" class="tiles persona-grid" aria-live="polite"></div>
           </section>
           <aside id="detailPanel" class="detail empty"><div class="empty-state-panel"><strong>Select a persona to view details.</strong></div></aside>
@@ -338,7 +347,7 @@
           </div>
           <ol id="exportCartList" class="export-cart-list" aria-label="Selected personas"></ol>
           <div class="export-actions">
-            <button id="selectAllVisible" class="btn" type="button">Select All Visible</button>
+            <button id="selectAllVisible" class="btn" type="button">Select Visible</button>
             <button id="clearExportSelection" class="btn" type="button">Clear Cart</button>
             <button id="printPersona" class="btn primary" type="button">Print / Save Combined PDF</button>
             <button id="savePdf" class="btn" type="button">Download PDF</button>

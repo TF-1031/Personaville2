@@ -1,6 +1,7 @@
 
 let selectedPersona = null;
 const exportSelection = new Set();
+const EXPORT_SELECTION_STORAGE_KEY = "personaville-v2-export-cart";
 
 function el(tag, attrs={}, children=[]){
   const node = document.createElement(tag);
@@ -42,6 +43,7 @@ function modifierChip(m){
 }
 
 function renderAll(){
+  restoreExportSelection();
   renderKpis();
   fillFilters();
   renderTiles();
@@ -914,6 +916,7 @@ function renderTiles(){
   const count = document.getElementById("personaResultCount");
   if(count) count.textContent = personas.length ? `${personas.length} persona${personas.length === 1 ? "" : "s"} found` : "No personas found";
   updateFilterSummary();
+  updatePersonaBulkSelectionToolbar();
   const d2 = document.getElementById("personaTiles");
   [d2].forEach(box => {
     if(!box) return;
@@ -1169,6 +1172,37 @@ function fillExportPicker(){
   renderPrintArea();
   renderExportCartList();
 }
+function restoreExportSelection(){
+  if(exportSelection.size || typeof browserStorage !== "function") return;
+  const storage = browserStorage();
+  if(!storage) return;
+  try{
+    const saved = JSON.parse(storage.getItem(EXPORT_SELECTION_STORAGE_KEY) || "[]");
+    if(Array.isArray(saved)) saved.forEach(id => { if(id) exportSelection.add(id); });
+  }catch(err){
+    storage.removeItem(EXPORT_SELECTION_STORAGE_KEY);
+  }
+}
+function persistExportSelection(){
+  if(typeof browserStorage !== "function") return;
+  const storage = browserStorage();
+  if(!storage) return;
+  storage.setItem(EXPORT_SELECTION_STORAGE_KEY, JSON.stringify([...exportSelection]));
+}
+function validPersonaIDs(){ return new Set(DB.personas.map(p => p.PersonaID).filter(Boolean)); }
+function pruneExportSelection(){
+  const valid = validPersonaIDs();
+  [...exportSelection].forEach(id => { if(!valid.has(id)) exportSelection.delete(id); });
+}
+function refreshExportSelectionViews(){
+  pruneExportSelection();
+  persistExportSelection();
+  syncExportSelectionUI();
+  renderPrintArea();
+  renderExportCartTray();
+  renderTiles();
+}
+
 function selectedExportPersonas(){
   return [...exportSelection]
     .map(id => DB.personas.find(p => p.PersonaID === id))
@@ -1182,31 +1216,28 @@ function toggleExportPersona(personaID, checked){
   if(!personaID) return;
   if(checked) exportSelection.add(personaID);
   else exportSelection.delete(personaID);
-  syncExportSelectionUI();
-  renderPrintArea();
-  renderExportCartTray();
-  renderTiles();
+  refreshExportSelectionViews();
 }
 function removeExportPersona(personaID){
   exportSelection.delete(personaID);
-  syncExportSelectionUI();
-  renderPrintArea();
-  renderExportCartTray();
-  renderTiles();
+  refreshExportSelectionViews();
 }
+function selectAllPersonas(){
+  DB.personas.forEach(p => { if(p.PersonaID) exportSelection.add(p.PersonaID); });
+  refreshExportSelectionViews();
+}
+function deselectAllPersonas(){ clearExportSelection(); }
 function selectAllVisiblePersonas(){
   visiblePersonas().forEach(p => { if(p.PersonaID) exportSelection.add(p.PersonaID); });
-  syncExportSelectionUI();
-  renderPrintArea();
-  renderExportCartTray();
-  renderTiles();
+  refreshExportSelectionViews();
+}
+function deselectVisiblePersonas(){
+  visiblePersonas().forEach(p => { if(p.PersonaID) exportSelection.delete(p.PersonaID); });
+  refreshExportSelectionViews();
 }
 function clearExportSelection(){
   exportSelection.clear();
-  syncExportSelectionUI();
-  renderPrintArea();
-  renderExportCartTray();
-  renderTiles();
+  refreshExportSelectionViews();
 }
 function syncExportSelectionUI(){
   const count = exportSelection.size;
@@ -1215,9 +1246,31 @@ function syncExportSelectionUI(){
   if(countEl) countEl.textContent = label;
   const pageCount = document.getElementById("exportCartCount");
   if(pageCount) pageCount.textContent = label;
+  updatePersonaBulkSelectionToolbar();
   document.querySelectorAll(".select-persona input[type='checkbox']").forEach(input => {
     input.checked = exportSelection.has(input.closest("article")?.dataset?.personaId || input.value);
   });
+}
+
+function updatePersonaBulkSelectionToolbar(){
+  const total = DB.personas.length;
+  const selected = exportSelection.size;
+  const visible = visiblePersonas();
+  const filtersActive = personaFiltersActive();
+  const text = filtersActive ? `Showing ${visible.length} of ${total} · ${selected} selected` : `${selected} of ${total} personas selected`;
+  const status = document.getElementById("personaSelectionCount");
+  if(status) status.textContent = total ? text : "0 selected";
+  const hasVisible = visible.length > 0;
+  const hasSelected = selected > 0;
+  const setDisabled = (id, disabled) => { const button = document.getElementById(id); if(button) button.disabled = disabled; };
+  setDisabled("selectAllPersonas", total === 0);
+  setDisabled("deselectAllPersonas", !hasSelected);
+  setDisabled("selectVisiblePersonas", !hasVisible);
+  setDisabled("deselectVisiblePersonas", !hasVisible);
+  setDisabled("viewExportCart", !hasSelected);
+  setDisabled("clearPersonaCart", !hasSelected);
+  setDisabled("clearExportSelection", !hasSelected);
+  setDisabled("selectAllVisible", !hasVisible);
 }
 
 function renderExportCartTray(){
