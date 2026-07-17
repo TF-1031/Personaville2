@@ -30,7 +30,7 @@ RC validation must include record-count comparison, representative pricing sched
 1. Open `index.html` from the published preview site, or preview locally with `python3 -m http.server 8000` and visit `http://localhost:8000/`.
 2. Personaville automatically loads `database/persona-db.json`.
 3. Use **Personas** to search/filter personas and add them to the **Export Cart**.
-4. Use **Admin → Database Health** before publishing data updates.
+4. Use **Database** for Database Manager editing workflows, and use **Admin → Database Health** before publishing data updates.
 5. Use **Admin → Publish Database** to upload an edited workbook and download a replacement JSON file.
 
 > If `file://` blocks JSON loading during local preview, run a local static server instead of opening `index.html` directly.
@@ -51,17 +51,18 @@ No custom domain is required for this preview URL.
 
 ## Primary navigation
 
-- **Personas** — the default view. Search by persona, speed, modifier, or Reference ID; filter by Pricing Set and Family Group; open persona details; and add matching personas to the Export Cart.
+- **View Personas** — the default view. Search by persona, speed, modifier, or Reference ID; filter by Pricing Set and Family Group; open persona details; and add matching personas to the Export Cart.
+- **Data Explorer** — reviews working-copy changes and database records before export.
 - **Export Cart** — shows selected personas, a single-persona preview fallback, print/PDF actions, and copy-summary behavior.
-- **Manage** — a placeholder that intentionally does not edit data. Editing, asset management, direct database editing, email export, and version history remain future v2 scope.
-- **Admin** — operational tools for overview metrics, Database Health, publishing, modifiers, and settings.
+- **Database** — compact navigation label for **Database Manager**, the broader workspace for Persona Editor, View Personas, Export Cart, Data Explorer, workbook import/export, Database Health, Assets, Disclaimers, Modifiers, Publishing, and future Version History links.
+- **Admin** — operational tools for overview metrics, Database Health, publishing, modifiers, assets, and settings.
 
 ## Hero and mini-player behavior
 
 The shared header is loaded once from `components/header.html` into `#personaville-header-container`.
 
 - On **Personas**, the header uses the full hero image from `assets/images/personaville-header.png`.
-- On **Export Cart**, **Manage**, and **Admin**, the same header switches to compact mini-player mode.
+- On **Data Explorer**, **Export Cart**, **Database**, and **Admin**, the same header switches to compact mini-player mode.
 - The audio element remains mounted across in-app navigation, so music continues until the user presses **Stop**.
 - The Play/Stop button controls `audio/8bit-Personaville-loop.mp3`, updates `aria-pressed`, and exposes a polite status label.
 - Missing hero or audio assets degrade gracefully and log warnings instead of blocking the application.
@@ -164,9 +165,9 @@ The preview audio player supports the bundled MP3 only. Replace `audio/8bit-Pers
 - **Print All** and **Download / Save as PDF** intentionally call the same browser print workflow.
 - Email export is not implemented in this baseline preview task.
 
-## Manage Coming Soon scope
+## Database Manager scope
 
-The **Manage** page is informational in this baseline preview. It does not save edits or write to the workbook/JSON. The following remain future v2 items: persona editing, speed/pricing editing, modifier/disclaimer editing, asset upload/management, direct database editing, email export, and version history.
+The **Database Manager** page is the broader workspace for maintaining the Personaville database, not only persona records. The compact primary-navigation label is **Database**. Current tools include the Persona Editor, speed options, pricing schedule, modifier, relationship, disclaimer, and asset placeholders, with links ready to connect View Personas, Export Cart, Data Explorer, workbook import/export, Database Health, Assets, Publishing, and future Version History workflows. Existing internal `manage` view links remain supported for bookmark compatibility.
 
 ## Developer guide
 

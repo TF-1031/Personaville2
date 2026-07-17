@@ -130,7 +130,7 @@ function renderPersonaStartPanel(){
   const form = document.getElementById("personaEditorForm");
   form.innerHTML = "";
   form.dataset.originalPersonaId = "";
-  form.appendChild(emptyState("Choose a persona management action.", "Create a blank draft, create from an existing persona, or view existing personas read-only first."));
+  form.appendChild(emptyState("Choose a Persona Editor action.", "Create a blank draft, create from an existing persona, or view existing personas read-only first."));
   updatePersonaEditorSaveState("Saved");
   const save = document.getElementById("personaEditorSave");
   const cancel = document.getElementById("personaEditorCancel");
