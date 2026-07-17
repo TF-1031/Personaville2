@@ -53,6 +53,7 @@ function renderAll(){
   renderSourceBanner();
   renderPublishPanel();
   renderEditingStatus();
+  renderWorkbookImportPanel();
   renderChangeReview();
   renderPersonaEditor();
   renderSpeedOptionEditor();
@@ -68,6 +69,62 @@ function renderAll(){
   const download = document.getElementById("downloadUpdatedJson");
   if(download) download.disabled = !(DB.loadedFromWorkbook || EditingSession.isEditing);
 }
+
+function renderWorkbookImportPanel(){
+  const panel = document.getElementById("workbookImportPanel");
+  if(!panel || typeof workbookImportState !== "function") return;
+  const state = workbookImportState();
+  panel.innerHTML = "";
+  if(!state || state.status === "idle") return;
+  panel.appendChild(el("h4",{},[`Import Workbook${state.filename ? `: ${state.filename}` : ""}`]));
+  panel.appendChild(el("ol",{class:"import-stage-list"},(state.stages || []).map(stage => el("li",{class:stage.status},[`${stage.label}${stage.status === "active" ? "…" : stage.status === "complete" ? " ✓" : ""}`]))));
+  if(state.errors?.length){
+    panel.appendChild(el("div",{class:"import-errors"},[
+      el("strong",{},["Validation errors"]),
+      el("ul",{},state.errors.slice(0,12).map(error => el("li",{},[error.message || String(error)])))
+    ]));
+    return;
+  }
+  if(state.warnings?.length){
+    panel.appendChild(el("ul",{},state.warnings.map(w => el("li",{class:"import-warning"},[w.message || String(w)]))));
+  }
+  if(state.summary && Object.keys(state.summary).length){
+    panel.appendChild(el("div",{class:"import-summary-grid"},Object.values(state.summary).map(item => el("div",{class:"import-summary-card"},[
+      el("strong",{},[item.label]),
+      el("div",{},[`Added ${item.added} · Changed ${item.changed} · Removed ${item.removed} · Unchanged ${item.unchanged}`]),
+      item.largeDeletion ? el("div",{class:"import-warning"},["Large deletion warning: review before applying."]) : null
+    ]))));
+    panel.appendChild(el("details",{},[
+      el("summary",{},["Inspect field-level changes"]),
+      el("ul",{},(state.changes || []).slice(0,200).map(change => el("li",{},[`${change.recordType} ${change.recordName} — ${change.field}: ${change.before} → ${change.after}`])))
+    ]));
+  }
+  if(state.status === "ready"){
+    const hasDeletes = Object.values(state.summary || {}).some(item => item.removed > 0);
+    panel.appendChild(el("div",{class:"import-actions"},[
+      el("button",{class:"btn",type:"button",onclick:()=>{ resetWorkbookImportState(); renderAll(); }},["Cancel Import"]),
+      el("button",{class:"btn",type:"button",onclick:()=>downloadDatabaseWorkbook("working")},["Export Current Working Copy"]),
+      el("button",{class:"btn primary",type:"button",onclick:()=>applyWorkbookImportFromPanel(hasDeletes)},["Replace Working Copy"])
+    ]));
+  }
+  if(["applied","restored"].includes(state.status)){
+    panel.appendChild(el("div",{class:"import-actions"},[
+      state.status === "applied" ? el("button",{class:"btn",type:"button",onclick:()=>{ restorePreImportState(); renderAll(); }},["Restore Pre-Import State"]) : null,
+      el("button",{class:"btn primary",type:"button",onclick:()=>setView("review")},["Open Review Changes"])
+    ]));
+  }
+}
+function applyWorkbookImportFromPanel(hasDeletes){
+  try{
+    if(editingHasUnsavedChanges() && !confirm("The working copy has unsaved changes. Replace it with the imported workbook?")) return;
+    if(hasDeletes && !confirm("This import proposes deletions. Apply these deletions to the working copy for review?")) return;
+    const result = applyPreparedWorkbookImport({replaceWorkingCopy:true, confirmDeletions:true});
+    renderAll();
+    setView("review");
+    alert(`Workbook import loaded into the working copy for review. ${result.changes.length} field-level change(s) are ready. Published data was not changed.`);
+  }catch(err){ alert(err.message); }
+}
+
 function renderEditingStatus(){
   const status = document.getElementById("editingStatus");
   if(status){

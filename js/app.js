@@ -192,6 +192,19 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("downloadPublishingPackage")?.addEventListener("click", downloadPublishingPackage);
   document.getElementById("exportPublishedWorkbook")?.addEventListener("click", () => downloadDatabaseWorkbook("published"));
   document.getElementById("exportWorkingWorkbook")?.addEventListener("click", () => downloadDatabaseWorkbook("working"));
+  document.getElementById("workbookImport")?.addEventListener("change", async (e)=>{
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if(!file) return;
+    try{
+      await prepareWorkbookImportFile(file);
+      renderAll();
+    }catch(err){
+      if(typeof resetWorkbookImportState === "function") resetWorkbookImportState();
+      alert("Could not prepare workbook import: " + err.message);
+      renderAll();
+    }
+  });
   document.getElementById("loadBundled").addEventListener("click", async ()=>{
     if(!warnIfUnsavedChanges("Loading the published database will discard unsaved working-copy changes. Continue?")) return;
     try{
