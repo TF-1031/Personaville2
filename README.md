@@ -92,18 +92,20 @@ When no personas are selected, Export Cart displays an empty state and keeps a s
 
 Authenticated direct publishing is intentionally not implemented in the static Personaville app. The default publishing method remains the downloadable manual publishing package because it does not require storing GitHub credentials in repository files, browser storage, or public JavaScript. See [Secure GitHub Publishing Design for Personaville v2](docs/secure-github-publishing.md) for the evaluated GitHub App, OAuth, server-side publishing service, and GitHub Actions workflow dispatch options.
 
-## Upload Workbook and JSON publishing workflow
+## Workbook export, import, review, and publishing workflow
 
-Use this workflow after editing `database/persona-db.xlsx`.
+Use this workflow when a Personaville workbook is exported, edited in Excel, and brought back for review.
 
-1. Open **Admin → Publish Database**.
-2. Click **Upload Workbook** and choose the edited `.xlsx`/`.xls` workbook.
-3. The workbook is parsed in-browser with SheetJS; no file is uploaded to a server.
-4. Review build metrics and **Admin → Database Health**.
-5. Click **Download Updated JSON**.
-6. Replace `database/persona-db.json` in the repository with the downloaded file.
-7. Commit the workbook and generated JSON together when the workbook changed.
-8. Open a focused pull request and allow GitHub Pages to publish after merge.
+1. In **Database Manager → Database Files**, use **Export Published Workbook** for a clean published snapshot or **Export Working Copy Workbook** to back up staged edits.
+2. Edit the exported `.xlsx` in Excel, but preserve every worksheet name and column header exactly. Personaville imports by canonical sheet and header names and will not guess renamed tabs or columns.
+3. Use **Import Workbook** in **Database Manager → Database Files** to select the edited Personaville `.xlsx`. Unsupported file types are rejected before parsing.
+4. Review the import stages, validation errors, and per-collection summary before applying. Fix validation errors in Excel and re-import when needed.
+5. If a dirty working copy already exists, choose **Cancel Import**, **Export Current Working Copy**, or explicitly **Replace Working Copy**. Merge is intentionally not offered for this release.
+6. Before replacement, Personaville keeps a pre-import recovery snapshot. Use **Restore Pre-Import State** / **Undo Workbook Import** from the import panel if the imported working copy is not what you expected.
+7. After applying, Database Health reruns and **Data Explorer / Review Changes** shows field-level differences. Publishing remains a separate explicit operation.
+8. To publish approved changes, review Database Health, create/download the publishing package or updated JSON, replace repository files, and commit through GitHub. Imported workbooks never directly change the published snapshot.
+
+Legacy **Admin → Publish Database → Upload Workbook** remains available for older JSON-generation workflows, but round-trip workbook editing should use Database Manager so changes are validated, summarized, recoverable, and persisted in the working copy before publishing.
 
 ## Database Health
 

@@ -211,7 +211,15 @@
                   <button id="exportWorkingWorkbook" class="btn primary" type="button">Export Working Copy Workbook</button>
                   <p class="muted">Exports the current working copy, including genuine staged edits. Working-copy exports are marked unpublished.</p>
                 </div>
+                <div class="publish-action-card workbook-import-card">
+                  <label class="btn primary" title="Import an edited Personaville Excel workbook into the working copy.">
+                    Import Workbook
+                    <input id="workbookImport" type="file" accept=".xlsx" hidden aria-label="Import workbook into the working copy">
+                  </label>
+                  <p class="muted">Upload a Personaville .xlsx workbook. Changes will be validated and loaded into the working copy for review. Published data will not be changed.</p>
+                </div>
               </div>
+              <div id="workbookImportPanel" class="workbook-import-panel" aria-live="polite"></div>
               <p id="workbookExportStatus" class="muted" aria-live="polite"></p>
             </section>
           <div class="manage-workspace-grid" aria-label="Database Manager workspace sections">
