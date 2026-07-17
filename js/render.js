@@ -79,6 +79,8 @@ function renderEditingStatus(){
   const undo = document.getElementById("undoEdit"), redo = document.getElementById("redoEdit");
   if(undo) undo.disabled = !canUndoEdit();
   if(redo) redo.disabled = !canRedoEdit();
+  const exportWorking = document.getElementById("exportWorkingWorkbook");
+  if(exportWorking) exportWorking.disabled = editingSessionState().initState !== "ready";
   if(state){
     const changes = Object.values(editingSessionState().recordStates || {}).reduce((acc, value) => { acc[value] = (acc[value] || 0) + 1; return acc; }, {});
     state.innerHTML = "";
