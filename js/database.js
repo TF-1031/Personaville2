@@ -696,16 +696,133 @@ function publishingInstructions(){
   ].join("\n") + "\n";
 }
 
+const WORKBOOK_INSTRUCTION_SHEET = "README";
+const WORKBOOK_METADATA_SHEET = "Metadata";
+const WORKBOOK_HEALTH_SUMMARY_SHEET = "Database Health summary";
+const WORKBOOK_SHEET_ORDER = [
+  SHEET_MAP.summary,
+  SHEET_MAP.settings,
+  "02_FamilyGroups",
+  "03_PricingSets",
+  SHEET_MAP.modifiers,
+  SHEET_MAP.personas,
+  SHEET_MAP.speedOptions,
+  SHEET_MAP.schedules,
+  SHEET_MAP.disclaimers,
+  SHEET_MAP.icons,
+  SHEET_MAP.personaModifiers,
+  SHEET_MAP.health
+];
+const WORKBOOK_RUNTIME_ONLY_FIELDS = new Set([...RUNTIME_ONLY_FIELDS, "selected", "isSelected", "previewUrl", "previewURL", "PreviewURL", "undoStack", "redoStack", "displayLabel", "DisplayLabelCalculated", "temporaryImportState", "ImportState"]);
+const WORKBOOK_TEXT_FIELD_PATTERNS = /(id$|^id$|path$|filename$|file$|icon$|reference|setting|status|date$)/i;
+const WORKBOOK_NUMERIC_FIELD_PATTERNS = /(price|month|sequence|displayorder|count)$/i;
+
+function workbookTimestamp(date=new Date()){
+  const pad = n => String(n).padStart(2, "0");
+  return `${date.getFullYear()}${pad(date.getMonth()+1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}`;
+}
+function sanitizeFilenamePart(value){ return String(value || "").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80); }
+function databaseWorkbookFilename(source, date=new Date()){
+  const base = source === "published" ? "Personaville-Published-Database" : "Personaville-Working-Copy";
+  const version = sanitizeFilenamePart(publishingDatabaseVersion());
+  return `${base}-${workbookTimestamp(date)}${version && version !== "unknown" ? `-${version}` : ""}.xlsx`;
+}
+function workbookSourceLabel(source){ return source === "published" ? "Published" : "Working Copy"; }
+function sourceRawForWorkbook(source){
+  if(source === "published") return cloneDatabasePayload(EditingSession.publishedRaw && Object.keys(EditingSession.publishedRaw).length ? EditingSession.publishedRaw : DB.raw);
+  if(EditingSession.initState !== "ready") throw new Error("Working copy export is available after application initialization completes.");
+  return cloneDatabasePayload(activeDatabaseSnapshot());
+}
+function workbookHealthRows(raw){
+  const current = activeDatabaseSnapshot();
+  const restore = !rawPayloadEquals(raw, current);
+  let savedRaw, savedWorking;
+  if(restore){ savedRaw = cloneDatabasePayload(DB.raw); savedWorking = cloneDatabasePayload(EditingSession.workingRaw); applyRawDatabase(raw, {source:DB.loadedFromWorkbook ? "workbook" : "bundled", filename:DB.sourceFilename, preservePublished:true}); }
+  const rows = buildHealth();
+  if(restore){ DB.raw = savedRaw; EditingSession.workingRaw = savedWorking; applyRawDatabase(current, {source:DB.loadedFromWorkbook ? "workbook" : "bundled", filename:DB.sourceFilename, preservePublished:true}); }
+  return rows;
+}
+function workbookHealthCounts(rows){
+  const errors = rows.filter(row => ["BAD", "ERROR", "FAIL"].includes(String(row.Status || "").toUpperCase())).length;
+  const warnings = rows.filter(row => String(row.Status || "").toUpperCase() === "WARN").length;
+  return {errors, warnings};
+}
+function workbookHeadersForSheet(sheetName, rows){
+  const headers = [];
+  rows.forEach(row => Object.keys(row || {}).forEach(key => { if(!WORKBOOK_RUNTIME_ONLY_FIELDS.has(key) && !headers.includes(key)) headers.push(key); }));
+  return headers;
+}
+function workbookCellValue(field, value){
+  if(value === undefined || value === null) return "";
+  if(field && /date$/i.test(field)) return normalizeDateCell(value);
+  if(typeof value === "boolean") return value ? "TRUE" : "FALSE";
+  if(typeof value === "number") return value;
+  if(WORKBOOK_NUMERIC_FIELD_PATTERNS.test(field) && String(value).trim() !== "" && !Number.isNaN(Number(value))) return Number(value);
+  return String(value);
+}
+function worksheetFromRows(sheetName, rows){
+  const headers = workbookHeadersForSheet(sheetName, rows);
+  const aoa = [headers, ...rows.map(row => headers.map(header => workbookCellValue(header, row?.[header])))];
+  const sheet = XLSX.utils.aoa_to_sheet(aoa);
+  if(sheet["!ref"]){
+    const range = XLSX.utils.decode_range(sheet["!ref"]);
+    for(let r=1; r<=range.e.r; r++) headers.forEach((header, c) => {
+      const address = XLSX.utils.encode_cell({r, c});
+      const cell = sheet[address];
+      if(!cell) return;
+      if(WORKBOOK_TEXT_FIELD_PATTERNS.test(header) || /^0\d+/.test(String(cell.v))) cell.t = "s";
+      else if(typeof cell.v === "number") cell.t = "n";
+    });
+  }
+  return sheet;
+}
+function workbookInstructionsRows(source){
+  return [
+    {Topic:"Workbook source", Instructions:`This is a ${workbookSourceLabel(source)} database workbook. ${source === "working" ? "It is unpublished until reviewed and published." : "It contains only the canonical published snapshot."}`},
+    {Topic:"Worksheet names", Instructions:"Preserve worksheet names exactly; Personaville imports by canonical sheet name."},
+    {Topic:"Column headers", Instructions:"Preserve column headers exactly and do not add UI-only fields."},
+    {Topic:"IDs", Instructions:"Preserve IDs as text, including leading zeros and relationship keys."},
+    {Topic:"Editing", Instructions:"Edit values only where appropriate; leave blank cells blank when blank differs from zero."},
+    {Topic:"Import", Instructions:"Import edited workbooks through Database Manager. Imported data is reviewed before publishing."},
+    {Topic:"Live site", Instructions:"Editing this workbook does not directly change the live site."}
+  ];
+}
+function workbookMetadataRows(source, raw, healthRows, date=new Date(), confirmedHealthErrors=false){
+  const counts = {}; Object.keys(raw || {}).forEach(sheet => { if(Array.isArray(raw[sheet])) counts[sheet] = raw[sheet].length; });
+  const health = workbookHealthCounts(healthRows);
+  return [
+    {Field:"database source", Value:workbookSourceLabel(source)},
+    {Field:"publication state", Value:source === "working" ? "Unpublished working copy" : "Published snapshot"},
+    {Field:"Personaville application version", Value:databaseSetting("ApplicationVersion") || databaseSetting("AppVersion") || "v2 Preview"},
+    {Field:"schema version", Value:databaseSetting("SchemaVersion") || EDIT_SESSION_SCHEMA_VERSION || ""},
+    {Field:"database version", Value:publishingDatabaseVersion()},
+    {Field:"generated date/time", Value:date.toISOString()},
+    {Field:"generated-by", Value:databaseSetting("GeneratedBy") || databaseSetting("Generated By") || "Personaville Database Manager"},
+    {Field:"health error count", Value:health.errors},
+    {Field:"health warning count", Value:health.warnings},
+    {Field:"dirty/uncommitted state", Value:source === "working" ? (editingHasUnsavedChanges() ? "Dirty / uncommitted" : "Clean working copy") : "Not applicable"},
+    {Field:"health-error export confirmed", Value:confirmedHealthErrors ? "TRUE" : "FALSE"},
+    ...Object.keys(counts).sort().map(sheet => ({Field:`record count: ${sheet}`, Value:counts[sheet]}))
+  ];
+}
+function databaseWorkbookBytes(source="working", options={}){
+  if(typeof XLSX === "undefined" || !XLSX?.utils || !XLSX?.write) throw new Error("SheetJS library did not load. Connect to the internet once and retry workbook export.");
+  const raw = sourceRawForWorkbook(source);
+  const healthRows = workbookHealthRows(raw);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheetFromRows(WORKBOOK_INSTRUCTION_SHEET, workbookInstructionsRows(source)), WORKBOOK_INSTRUCTION_SHEET);
+  XLSX.utils.book_append_sheet(workbook, worksheetFromRows(WORKBOOK_METADATA_SHEET, workbookMetadataRows(source, raw, healthRows, options.date || new Date(), Boolean(options.confirmedHealthErrors))), WORKBOOK_METADATA_SHEET);
+  const sheets = [...WORKBOOK_SHEET_ORDER, ...Object.keys(raw || {}).filter(name => !WORKBOOK_SHEET_ORDER.includes(name)).sort()];
+  sheets.forEach(sheetName => {
+    const rows = Array.isArray(raw[sheetName]) ? raw[sheetName].map(row => canonicalizeRowForComparison(row)) : [];
+    XLSX.utils.book_append_sheet(workbook, worksheetFromRows(sheetName, rows), sheetName.slice(0, 31));
+  });
+  XLSX.utils.book_append_sheet(workbook, worksheetFromRows(WORKBOOK_HEALTH_SUMMARY_SHEET, healthRows), WORKBOOK_HEALTH_SUMMARY_SHEET.slice(0,31));
+  return new Uint8Array(XLSX.write(workbook, {bookType:"xlsx", type:"array"}));
+}
 function updatedWorkbookBytes(){
   if(typeof XLSX === "undefined" || !XLSX?.utils || !XLSX?.write) return null;
-  const workbook = XLSX.utils.book_new();
-  const raw = activeDatabaseSnapshot();
-  Object.keys(raw || {}).forEach(sheetName => {
-    const rows = Array.isArray(raw[sheetName]) ? raw[sheetName] : [];
-    const sheet = XLSX.utils.json_to_sheet(rows);
-    XLSX.utils.book_append_sheet(workbook, sheet, sheetName.slice(0, 31));
-  });
-  return new Uint8Array(XLSX.write(workbook, {bookType:"xlsx", type:"array"}));
+  return databaseWorkbookBytes("working");
 }
 function dataUrlToBytes(dataUrl){
   const text = String(dataUrl || "");

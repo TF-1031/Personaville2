@@ -190,6 +190,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
   document.getElementById("downloadUpdatedJson").addEventListener("click", downloadUpdatedJson);
   document.getElementById("downloadPublishingPackage")?.addEventListener("click", downloadPublishingPackage);
+  document.getElementById("exportPublishedWorkbook")?.addEventListener("click", () => downloadDatabaseWorkbook("published"));
+  document.getElementById("exportWorkingWorkbook")?.addEventListener("click", () => downloadDatabaseWorkbook("working"));
   document.getElementById("loadBundled").addEventListener("click", async ()=>{
     if(!warnIfUnsavedChanges("Loading the published database will discard unsaved working-copy changes. Continue?")) return;
     try{
@@ -352,6 +354,36 @@ async function downloadPublishingPackage(){
     alert("Review the downloaded package, then commit the included database, assets, reports, and release notes to GitHub. Never modify the published site directly.");
     if(typeof markWorkingCopyDownloaded === "function") markWorkingCopyDownloaded();
     renderAll();
+  }catch(err){
+    alert(err.message);
+  }
+}
+
+
+function downloadDatabaseWorkbook(source){
+  try{
+    const healthRows = typeof workbookHealthRows === "function" ? workbookHealthRows(sourceRawForWorkbook(source)) : buildHealth();
+    const health = typeof workbookHealthCounts === "function" ? workbookHealthCounts(healthRows) : {errors:0, warnings:0};
+    const status = document.getElementById("workbookExportStatus");
+    let confirmedHealthErrors = false;
+    if(source === "working" && health.errors > 0){
+      confirmedHealthErrors = window.confirm(`The working copy has ${health.errors} health error(s). Export a backup workbook anyway?`);
+      if(!confirmedHealthErrors) return;
+    }else if(health.warnings > 0 && status){
+      status.textContent = `Export includes ${health.warnings} health warning(s).`;
+    }
+    const date = new Date();
+    const bytes = databaseWorkbookBytes(source, {date, confirmedHealthErrors});
+    const blob = new Blob([bytes], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.href = url;
+    link.download = databaseWorkbookFilename(source, date);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    if(status) status.textContent = `Downloaded ${link.download}`;
   }catch(err){
     alert(err.message);
   }

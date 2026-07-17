@@ -200,6 +200,20 @@
             <button class="btn" type="button" onclick="setView('review')">Data Explorer</button>
           </div>
           <div id="editingStateSummary" class="kpis dashboard-overview" aria-live="polite"></div>
+            <section class="manage-section workbook-export" aria-labelledby="workbookExportHeading">
+              <div class="section-head compact"><div><h3 id="workbookExportHeading">Database Files</h3><p class="muted">Download a structured Excel workbook for manual review, backup, editing, and later import through Database Manager.</p></div></div>
+              <div class="publish-action-grid">
+                <div class="publish-action-card">
+                  <button id="exportPublishedWorkbook" class="btn" type="button">Export Published Workbook</button>
+                  <p class="muted">Exports only the canonical published snapshot. Uncommitted working-copy edits are not included.</p>
+                </div>
+                <div class="publish-action-card">
+                  <button id="exportWorkingWorkbook" class="btn primary" type="button">Export Working Copy Workbook</button>
+                  <p class="muted">Exports the current working copy, including genuine staged edits. Working-copy exports are marked unpublished.</p>
+                </div>
+              </div>
+              <p id="workbookExportStatus" class="muted" aria-live="polite"></p>
+            </section>
           <div class="manage-workspace-grid" aria-label="Database Manager workspace sections">
             <section class="manage-section persona-editor" aria-labelledby="personaEditorHeading">
               <div class="section-head compact">
