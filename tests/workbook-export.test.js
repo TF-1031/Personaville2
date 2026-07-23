@@ -14,12 +14,14 @@ function fakeXlsx(){
     sheet['!ref'] = aoa.length ? `A1:${encode_cell({r:aoa.length-1,c:Math.max(0,...aoa.map(r=>r.length-1))})}` : 'A1:A1';
     return sheet;
   };
-  const sheet_to_json = sheet => {
-    const [headers = [], ...rows] = sheet.__aoa || [];
+  const sheet_to_json = (sheet, options={}) => {
+    const aoa = sheet.__aoa || [];
+    if(options.header === 1) return aoa.map(row => row.map(v => v ?? options.defval ?? ''));
+    const [headers = [], ...rows] = aoa;
     return rows.filter(row => row.some(v => String(v ?? '').trim() !== '')).map(row => Object.fromEntries(headers.map((h,i)=>[h, row[i] ?? ''])));
   };
   const book_new = () => ({SheetNames:[], Sheets:{}});
-  const book_append_sheet = (wb, sheet, name) => { wb.SheetNames.push(name); wb.Sheets[name]=sheet; };
+  const book_append_sheet = (wb, sheet, name) => { if(wb.Sheets[name]) throw new Error(`Worksheet with name [${name}] already exists!`); wb.SheetNames.push(name); wb.Sheets[name]=sheet; };
   const write = wb => Buffer.from(JSON.stringify(wb));
   return {utils:{aoa_to_sheet, sheet_to_json, book_new, book_append_sheet, encode_cell, decode_range}, write};
 }
@@ -51,10 +53,15 @@ context.XLSX.write = wb => { context.XLSX.write.last = JSON.stringify(wb); retur
 const publishedBook = workbook('published', {date:new Date('2026-07-17T12:34:00Z')});
 const workingBook = workbook('working', {date:new Date('2026-07-17T12:34:00Z'), confirmedHealthErrors:true});
 
+assert.strictEqual(publishedBook.SheetNames.filter(n => n === 'README').length, 1, 'published export contains exactly one README worksheet');
+assert.strictEqual(workingBook.SheetNames.filter(n => n === 'README').length, 1, 'working-copy export contains exactly one README worksheet');
+
 for(const sheet of ['README','Metadata','01_Settings','02_FamilyGroups','03_PricingSets','04_Modifiers','05_Personas','06_SpeedOptions','07_PricingSchedules','08_Disclaimers','09_Icons','10_PersonaModifiers','12_DataHealth','Database Health summary'.slice(0,31)]){
   assert(workingBook.SheetNames.includes(sheet), `expected sheet ${sheet}`);
 }
 assert.deepStrictEqual(workingBook.SheetNames.filter(n => n === '05_Personas'), ['05_Personas'], 'sheet names match importer expectations without duplicate persona structures');
+assert.deepStrictEqual(publishedBook.SheetNames.filter(n => n === 'README'), ['README'], 'published export completes without duplicate README worksheet errors');
+assert.deepStrictEqual(workingBook.SheetNames.filter(n => n === 'README'), ['README'], 'working-copy export completes without duplicate README worksheet errors');
 
 const metadataRows = context.XLSX.utils.sheet_to_json(workingBook.Sheets.Metadata);
 assert.strictEqual(metadataRows.find(r => r.Field === 'publication state').Value, 'Unpublished working copy');
@@ -77,11 +84,17 @@ assert.strictEqual(workingBook.Sheets['07_PricingSchedules'][context.XLSX.utils.
 
 const disclaimers = context.XLSX.utils.sheet_to_json(workingBook.Sheets['08_Disclaimers']);
 assert.strictEqual(disclaimers[0].DisclaimerText, 'Exact legal copy — with unicode “quotes” & symbols ™', 'disclaimer text remains exact');
-assert.strictEqual(context.databaseWorkbookFilename('published', new Date('2026-07-17T12:34:00Z')).startsWith('Personaville-Published-Database-20260717-1234'), true);
-assert.strictEqual(context.databaseWorkbookFilename('working', new Date('2026-07-17T12:34:00Z')).startsWith('Personaville-Working-Copy-20260717-1234'), true);
+const publishedFilename = context.databaseWorkbookFilename('published', new Date('2026-07-17T12:34:00Z'));
+const workingFilename = context.databaseWorkbookFilename('working', new Date('2026-07-17T12:34:00Z'));
+assert.strictEqual(publishedFilename.startsWith('Personaville-Published-Database-20260717-1234'), true);
+assert.strictEqual(workingFilename.startsWith('Personaville-Working-Copy-20260717-1234'), true);
+assert.strictEqual(publishedFilename.endsWith('.xlsx'), true, 'published export filename ends in .xlsx');
+assert.strictEqual(workingFilename.endsWith('.xlsx'), true, 'working-copy export filename ends in .xlsx');
 
 const parsedRaw = {};
 workingBook.SheetNames.forEach(name => { parsedRaw[name] = context.XLSX.utils.sheet_to_json(workingBook.Sheets[name]); });
+const importSession = context.prepareWorkbookImportFromWorkbook(publishedBook, 'roundtrip.xlsx');
+assert.strictEqual(importSession.status, 'ready', `Database Manager import preparation still accepts exported workbooks: ${JSON.stringify(importSession.errors)}`);
 context.applyRawDatabase(parsedRaw, {source:'workbook', filename:'roundtrip.xlsx', preservePublished:true});
 assert.strictEqual(context.databaseState().personas[0].PersonaID, '00123', 'generated workbook can be parsed by importer path');
 assert.strictEqual(context.editingChangeList().length > 0, true, 'exporting does not mutate working-copy change tracking');
